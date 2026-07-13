@@ -1,3 +1,4 @@
+import { BUILDINGS } from '../content/buildings';
 import type { Rng } from '../core/rng';
 import { pick } from '../core/rng';
 import type { SimEvent } from './events';
@@ -12,6 +13,11 @@ const GOOD_OMENS = [
 ];
 const MILESTONE_PHRASES = ['has grown to', 'now numbers', 'counts within its walls', 'has swelled to'];
 const FAMINE_PHRASES = ['Famine stalks', 'Hunger gnaws at', 'Empty granaries haunt', 'Want and sorrow visit'];
+const RAISED_PHRASES = [
+  'New timbers rise in',
+  'The masons have finished their work in',
+  'There is new building in',
+];
 
 /**
  * The annalist. Reads this tick's raw events and appends prose `chronicle`
@@ -46,6 +52,14 @@ export function narrate(state: GameState, events: SimEvent[], rng: Rng): void {
       case 'storageFull':
         say(`The stores of the realm overflow with ${e.resource}; the surplus goes to waste.`);
         break;
+      case 'buildingCompleted': {
+        const def = BUILDINGS[e.building];
+        say(
+          `${pick(rng, RAISED_PHRASES)} ${nameOf(e.settlement)}: a ${def?.name.toLowerCase() ?? e.building} stands complete.`,
+          'good',
+        );
+        break;
+      }
       case 'dayEnd': {
         const d = dateOf(state.tick);
         if (d.day > 0 && d.day % DAYS_PER_YEAR === 0) {

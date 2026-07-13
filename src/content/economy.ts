@@ -60,13 +60,18 @@ export const STARTING_STOCK: Record<ResourceId, number> = {
 /** Pop-count thresholds worth a chronicle entry. */
 export const POP_MILESTONES: readonly number[] = [100, 250, 500, 1000, 2500, 5000];
 
-/** siteCapacity: worker slots contributed by one nearby cell of each biome. */
+/**
+ * siteCapacity: worker slots contributed by one nearby cell of each biome.
+ * Deliberately scarce relative to workforce — a capital's workers should
+ * outgrow what the land offers, so that constructed farms/camps/quarries
+ * (which ADD slots) are meaningful decisions rather than decoration.
+ */
 export const SLOTS_PER_CELL = {
-  farmland: 12,
-  meadow: 4,
-  deciduous: 10,
-  pine: 6,
-  rock: 8,
+  farmland: 4,
+  meadow: 1,
+  deciduous: 4,
+  pine: 2,
+  rock: 3,
 } as const;
 
 /** Trade slots: settlement base by tier, plus harbor and per-road bonuses. */

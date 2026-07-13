@@ -1,5 +1,6 @@
+import { BUILDINGS } from '../content/buildings';
 import { WORK_JOBS, type WorkJob } from '../content/economy';
-import type { BuildingId, TechId, UnitId } from '../content/schema';
+import type { BuildingId, ResourceId, TechId, UnitId } from '../content/schema';
 import type { SimEvent } from './events';
 import type { GameState, RealmId } from './state';
 
@@ -21,7 +22,7 @@ export type Objective =
 export type Command =
   // Ruler mode
   | { kind: 'setWorkerAllocation'; settlement: number; alloc: Partial<Record<WorkJob, number>> }
-  | { kind: 'queueBuilding'; settlement: number; building: BuildingId } // M2
+  | { kind: 'queueBuilding'; settlement: number; building: BuildingId }
   | { kind: 'setResearch'; tech: TechId } // M3
   | { kind: 'trainUnits'; settlement: number; unit: UnitId; count: number } // M4
   | { kind: 'declareWar'; target: RealmId } // M5
@@ -72,6 +73,33 @@ export function applyCommands(state: GameState, issued: IssuedCommand[], out: Si
           break;
         }
         s.alloc = next;
+        break;
+      }
+      case 'queueBuilding': {
+        const s = state.settlements[cmd.settlement];
+        if (!s) {
+          reject(out, realm, `no such settlement ${cmd.settlement}`);
+          break;
+        }
+        if (s.ownerRealm !== realm) {
+          reject(out, realm, `settlement ${cmd.settlement} not owned by realm ${realm}`);
+          break;
+        }
+        const def = BUILDINGS[cmd.building];
+        if (!def) {
+          reject(out, realm, `unknown building '${cmd.building}'`);
+          break;
+        }
+        const r = state.realms[realm];
+        const costs = Object.entries(def.cost) as [ResourceId, number][];
+        const short = costs.find(([res, amt]) => r.stock[res] < amt);
+        if (short) {
+          reject(out, realm, `cannot afford ${def.name}: needs ${short[1]} ${short[0]}`);
+          break;
+        }
+        for (const [res, amt] of costs) r.stock[res] -= amt;
+        s.buildQueue.push({ building: def.id, progress: 0 });
+        out.push({ kind: 'buildingQueued', settlement: s.id, building: def.id });
         break;
       }
       default:

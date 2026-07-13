@@ -1,5 +1,6 @@
 import { STORAGE_BASE } from '../../content/economy';
 import type { ResourceId } from '../../content/schema';
+import { buildingContrib } from '../buildings';
 import type { SimEvent } from '../events';
 import { resolveStat } from '../modifiers';
 import type { GameState } from '../state';
@@ -18,7 +19,8 @@ export function storageSystem(state: GameState, out: SimEvent[]): void {
     for (const s of state.settlements) {
       if (s.ownerRealm !== realm.id) continue;
       const tier = state.world.settlements[s.id].tier;
-      const per = resolveStat({ state, realm: realm.id, settlement: s.id }, STORAGE_BASE[tier], {
+      const base = STORAGE_BASE[tier] + buildingContrib(s).storage;
+      const per = resolveStat({ state, realm: realm.id, settlement: s.id }, base, {
         stat: 'storageCap',
       });
       for (const r of RESOURCES) cap[r] += per;
