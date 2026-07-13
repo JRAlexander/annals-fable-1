@@ -1,0 +1,27 @@
+{
+  "name": "realms",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "REALMS — a playable AoE-style kingdom game built on the ANNALS living-world engine.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "tsc --noEmit && biome check src tests && depcruise src && bash scripts/purity-check.sh",
+    "sim:bench": "vitest run tests/bench.test.ts"
+  },
+  "dependencies": {
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.2.0",
+    "@types/three": "^0.180.0",
+    "dependency-cruiser": "^17.0.0",
+    "typescript": "^5.6.0",
+    "vite": "^7.0.0",
+    "vitest": "^3.0.0"
+  }
+}

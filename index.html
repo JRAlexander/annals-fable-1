@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>REALMS</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #0c0e12; }
+      #view { display: block; width: 100vw; height: 100vh; }
+      #hud {
+        position: fixed; top: 0; left: 0; right: 0;
+        display: flex; gap: 18px; align-items: center;
+        padding: 10px 16px;
+        font: 13px/1.4 Georgia, 'Times New Roman', serif;
+        color: #e9dcc3;
+        background: linear-gradient(to bottom, rgba(12, 14, 18, 0.8), transparent);
+        pointer-events: none;
+      }
+      #hud .title { font-size: 16px; letter-spacing: 4px; font-weight: bold; }
+      #hud b { color: #c9a227; }
+      #hud button {
+        pointer-events: auto;
+        margin-left: auto;
+        background: rgba(233, 220, 195, 0.1);
+        border: 1px solid rgba(233, 220, 195, 0.35);
+        color: #e9dcc3; font: inherit;
+        padding: 3px 12px; border-radius: 3px; cursor: pointer;
+      }
+      #hud button:hover { background: rgba(233, 220, 195, 0.22); }
+      #loading {
+        position: fixed; inset: 0; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: 8px;
+        color: #e9dcc3; font: 15px Georgia, serif; letter-spacing: 2px;
+        background: #0c0e12;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <div id="hud"></div>
+    <div id="loading">
+      <div style="letter-spacing:6px">R E A L M S</div>
+      <div style="opacity:0.6;font-size:12px">forging the world…</div>
+    </div>
+    <script type="module" src="/src/app/main.ts"></script>
+  </body>
+</html>
