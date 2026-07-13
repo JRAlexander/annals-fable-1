@@ -127,6 +127,16 @@ export function narrate(state: GameState, events: SimEvent[], rng: Rng): void {
       case 'siegeRepelled':
         say(`The walls of ${nameOf(e.settlement)} held; the besiegers lie broken before them.`, 'good');
         break;
+      case 'armiesEngaged':
+        say('The hosts have met in the open field, and the earth drinks deep.', 'grim');
+        break;
+      case 'fieldBattleWon': {
+        const winner = state.armies.find((a) => a.id === e.winner);
+        const name =
+          winner && winner.ownerRealm >= 0 ? state.realms[winner.ownerRealm]?.name : 'the wild companies';
+        say(`The field is won by ${name ?? 'an unknown banner'}; the beaten host is scattered.`, 'neutral');
+        break;
+      }
       case 'raidSpawned':
         say(
           `The wandering companies grow bold: raiders are seen on the roads toward ${nameOf(e.settlement)}.`,

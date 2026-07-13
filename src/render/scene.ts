@@ -28,6 +28,7 @@ export function createScene(world: WorldData, canvas: HTMLCanvasElement): SceneH
   const scene = new THREE.Scene();
 
   const sky = buildSky();
+  sky.mesh.name = 'sky'; // the RTS picker must never "click the heavens"
   scene.add(sky.mesh);
 
   const sun = new THREE.DirectionalLight(0xfff2dd, 2.6);

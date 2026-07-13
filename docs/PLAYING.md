@@ -70,7 +70,15 @@ The HUD's goal line keeps the objectives in view for your first year.
 | **Bottom left** | The **chronicle** — your realm's history, written as it happens |
 | **Center toasts** | Completions and rejections (a red toast tells you *why* an order failed) |
 
-**Camera**: drag to orbit, scroll to zoom. **Keys**: `Space` pause, `1`/`2`/`3` speeds, `T` tech tree.
+## Commanding on the map (RTS controls)
+
+- **Left click** an army banner to select it; **left-drag** a box to select several; **Shift-click** adds; **Esc** or clicking empty ground clears.
+- **Right click** with a selection to give orders: open ground → **march there and hold**; an enemy army → **attack it**; a bandit camp → **assault it**; an enemy town (at war) → **besiege it**.
+- **Middle-drag** orbits the camera, **scroll** zooms.
+- Hostile armies that meet in the open **fight a field battle** — you can intercept raiders and invading armies before they reach your towns (and your token forces can be cut down on the road, so escort matters).
+- The panel dropdown still works for everything if you prefer menus.
+
+**Keys**: `Space` pause, `1`/`2`/`3` speeds, `T` tech tree, `Esc` clear selection.
 
 ## Your first hour, step by step
 

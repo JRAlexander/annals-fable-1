@@ -64,6 +64,8 @@ export interface SimSettlement {
   trainQueue: TrainingJob[];
   /** Trained units stationed here, awaiting army formation. */
   garrison: UnitCounts;
+  /** Day the last militia levy was raised — a people musters once a season. */
+  lastLevyDay?: number;
 }
 
 export interface ConstructionJob {
@@ -84,6 +86,8 @@ export type UnitCounts = Partial<Record<UnitId, number>>;
 export type ArmyObjective =
   | { kind: 'attackCamp'; camp: number }
   | { kind: 'attackSettlement'; settlement: number } // typed for M5
+  | { kind: 'moveTo'; i: number; j: number } // M7a: march to a field cell and hold
+  | { kind: 'attackArmy'; army: number } // M7a: pursue a hostile army
   | { kind: 'returnHome' };
 
 /**
@@ -111,6 +115,8 @@ export interface Army {
   battleStartStrength: number;
   /** Accumulated damage to the besieged settlement's fortifications. */
   siegeDamage?: number;
+  /** Army id this army is locked in a FIELD battle with (M7a), if any. */
+  engagedWith?: number;
 }
 
 /** Live bandit camp state (site geography lives in WorldData.camps). */

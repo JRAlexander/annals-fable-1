@@ -29,15 +29,28 @@ const WILD_PHASE_COLOR: Record<string, number> = {
 };
 const DRAGON_COLOR = 0xd84418;
 
+const SOLDIER_COLOR: Record<string, number> = { player: 0xd8c88f, rival: 0x9a3a30, wild: 0x2a2622 };
+const MAX_SOLDIERS_PER_ARMY = 24;
+const SOLDIER_SPACING = 7;
+
+export interface ArmyPick {
+  mesh: THREE.InstancedMesh;
+  /** instanceId → army id, refreshed every sync. */
+  ids: number[];
+}
+
+export interface ArmiesHandle {
+  sync(state: GameState, alpha: number, selected?: ReadonlySet<number>): void;
+  /** The banner cones, raycastable; instanceId maps through `ids`. */
+  getPickTargets(): ArmyPick | null;
+}
+
 /**
- * Armies as banner-cones (size tracks strength, color tracks phase) and camps
- * as dark tents that vanish when cleared. Army positions interpolate between
- * the last two sim ticks via the loop's alpha — the first use of the hook.
+ * Armies as banner-cones plus soldier formations (M7a), camps as dark tents.
+ * Positions interpolate between the last two sim ticks via the loop's alpha.
+ * The cone mesh doubles as the RTS pick target; selection shows as a ring.
  */
-export function createArmies(
-  scene: THREE.Scene,
-  world: WorldData,
-): { sync(state: GameState, alpha: number): void } {
+export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle {
   // camp tents: built once, hidden when cleared
   const tentGeo = archGeo('longhouse');
   const tents = new THREE.InstancedMesh(
@@ -49,6 +62,7 @@ export function createArmies(
   const _q = new THREE.Quaternion();
   const _v = new THREE.Vector3();
   const _s = new THREE.Vector3();
+  const _c = new THREE.Color();
   world.camps.forEach((c, k) => {
     const y = terrainHeight(world.heightmap, c.x, c.z);
     _v.set(c.x, y, c.z);
@@ -58,16 +72,72 @@ export function createArmies(
     tents.setMatrixAt(k, _m);
   });
   tents.instanceMatrix.needsUpdate = true;
+  tents.frustumCulled = false; // instance matrices live far from the geometry origin
   scene.add(tents);
 
   const coneGeo = new THREE.ConeGeometry(8, 26, 6);
   coneGeo.translate(0, 13, 0);
+  const soldierGeo = new THREE.BoxGeometry(3.2, 9, 3.2);
+  soldierGeo.translate(0, 4.5, 0);
+  const ringGeo = new THREE.RingGeometry(16, 20, 24);
+  ringGeo.rotateX(-Math.PI / 2);
+
   let cones: THREE.InstancedMesh | null = null;
-  let capacity = 0;
+  let soldiers: THREE.InstancedMesh | null = null;
+  let rings: THREE.InstancedMesh | null = null;
+  let coneCap = 0;
+  let soldierCap = 0;
+  let ringCap = 0;
+  let pickIds: number[] = [];
   const clearedShown = new Set<number>();
 
+  const ensureCapacity = (needCones: number, needSoldiers: number, needRings: number) => {
+    if (!cones || needCones > coneCap) {
+      if (cones) scene.remove(cones);
+      coneCap = Math.max(8, needCones * 2);
+      cones = new THREE.InstancedMesh(coneGeo, new THREE.MeshLambertMaterial({ color: 0xffffff }), coneCap);
+      cones.name = 'army-banners';
+      cones.frustumCulled = false; // instance bounds are not where the geometry is
+      scene.add(cones);
+    }
+    if (!soldiers || needSoldiers > soldierCap) {
+      if (soldiers) scene.remove(soldiers);
+      soldierCap = Math.max(64, needSoldiers * 2);
+      soldiers = new THREE.InstancedMesh(
+        soldierGeo,
+        new THREE.MeshLambertMaterial({ color: 0xffffff }),
+        soldierCap,
+      );
+      soldiers.name = 'army-soldiers';
+      soldiers.frustumCulled = false;
+      soldiers.raycast = () => {}; // picking goes through the banner cones only
+      scene.add(soldiers);
+    }
+    if (!rings || needRings > ringCap) {
+      if (rings) scene.remove(rings);
+      ringCap = Math.max(8, needRings * 2);
+      rings = new THREE.InstancedMesh(
+        ringGeo,
+        new THREE.MeshBasicMaterial({
+          color: 0xc9a227,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.85,
+        }),
+        ringCap,
+      );
+      rings.name = 'selection-rings';
+      rings.frustumCulled = false;
+      rings.raycast = () => {};
+      scene.add(rings);
+    }
+  };
+
   return {
-    sync(state, alpha) {
+    getPickTargets(): ArmyPick | null {
+      return cones ? { mesh: cones, ids: pickIds } : null;
+    },
+    sync(state, alpha, selected) {
       // hide cleared camps (once)
       for (const camp of state.camps) {
         if (camp.cleared && !clearedShown.has(camp.id)) {
@@ -83,16 +153,16 @@ export function createArmies(
       }
 
       const n = state.armies.length;
-      if (!cones || n > capacity) {
-        if (cones) scene.remove(cones);
-        capacity = Math.max(8, n * 2);
-        cones = new THREE.InstancedMesh(
-          coneGeo,
-          new THREE.MeshLambertMaterial({ color: 0xc9a227 }),
-          capacity,
-        );
-        scene.add(cones);
-      }
+      const soldierWant = state.armies.reduce(
+        (t, a) => t + Math.min(MAX_SOLDIERS_PER_ARMY, Math.ceil(totalUnits(a.units) / 3)),
+        0,
+      );
+      const selCount = selected?.size ?? 0;
+      ensureCapacity(n, soldierWant, Math.max(1, selCount));
+      pickIds = [];
+
+      let sIdx = 0;
+      let rIdx = 0;
       state.armies.forEach((a, k) => {
         const x = a.prevX + (a.x - a.prevX) * alpha;
         const z = a.prevZ + (a.z - a.prevZ) * alpha;
@@ -106,12 +176,60 @@ export function createArmies(
         cones?.setMatrixAt(k, _m);
         const palette =
           a.ownerRealm === 0 ? PHASE_COLOR : a.ownerRealm < 0 ? WILD_PHASE_COLOR : ENEMY_PHASE_COLOR;
-        cones?.setColorAt(k, new THREE.Color(isDragon ? DRAGON_COLOR : (palette[a.phase] ?? 0xc9a227)));
+        cones?.setColorAt(k, _c.set(isDragon ? DRAGON_COLOR : (palette[a.phase] ?? 0xc9a227)));
+        pickIds.push(a.id);
+
+        // the formation: a phalanx block behind the banner
+        if (!isDragon) {
+          const count = Math.min(MAX_SOLDIERS_PER_ARMY, Math.ceil(totalUnits(a.units) / 3));
+          const cols = Math.max(1, Math.ceil(Math.sqrt(count * 1.5)));
+          const tint = _c.set(
+            a.ownerRealm === 0
+              ? SOLDIER_COLOR.player
+              : a.ownerRealm < 0
+                ? SOLDIER_COLOR.wild
+                : SOLDIER_COLOR.rival,
+          );
+          for (let s = 0; s < count && soldiers && sIdx < soldierCap; s++) {
+            const col = (s % cols) - (cols - 1) / 2;
+            const row = Math.floor(s / cols) + 1;
+            const sx = x + col * SOLDIER_SPACING;
+            const sz = z + row * SOLDIER_SPACING;
+            const sy = terrainHeight(world.heightmap, sx, sz);
+            _v.set(sx, sy, sz);
+            _s.set(1, 1, 1);
+            _q.identity();
+            _m.compose(_v, _q, _s);
+            soldiers.setMatrixAt(sIdx, _m);
+            soldiers.setColorAt(sIdx, tint);
+            sIdx++;
+          }
+        }
+
+        if (selected?.has(a.id) && rings && rIdx < ringCap) {
+          const rs = Math.max(1.2, sc);
+          _v.set(x, y + 1.5, z);
+          _s.set(rs, 1, rs);
+          _q.identity();
+          _m.compose(_v, _q, _s);
+          rings.setMatrixAt(rIdx, _m);
+          rIdx++;
+        }
       });
+
       if (cones) {
         cones.count = n;
         cones.instanceMatrix.needsUpdate = true;
         if (cones.instanceColor) cones.instanceColor.needsUpdate = true;
+      }
+      if (soldiers) {
+        soldiers.count = sIdx;
+        soldiers.instanceMatrix.needsUpdate = true;
+        if (soldiers.instanceColor) soldiers.instanceColor.needsUpdate = true;
+      }
+      if (rings) {
+        rings.count = rIdx;
+        rings.instanceMatrix.needsUpdate = true;
       }
     },
   };
