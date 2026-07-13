@@ -8,7 +8,7 @@ export type ResourceId = 'food' | 'wood' | 'stone' | 'gold';
 export type Cost = Partial<Record<ResourceId, number>>;
 
 export type AgeId = 'founding' | 'flowering' | 'highKingdom' | 'golden';
-export type UnitTag = 'infantry' | 'cavalry' | 'ranged' | 'siege';
+export type UnitTag = 'infantry' | 'cavalry' | 'ranged' | 'siege' | 'monster';
 
 export type CultureId = string;
 export type TechId = string;

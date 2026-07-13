@@ -100,14 +100,17 @@ export function validateContent(): string[] {
   for (const [key, def] of Object.entries(UNITS)) {
     if (def.id !== key) errors.push(`unit ${key}: id '${def.id}' mismatch`);
     badCost(def.cost, `unit ${key}`, errors);
+    const wild = def.tags.includes('monster'); // monsters are spawned, never trained
     const homes = trainedAt.get(key) ?? [];
-    if (homes.length === 0) errors.push(`unit ${key}: no building trains it`);
-    else if (!homes.some((b) => ageIndex(BUILDINGS[b].requiresAge) <= ageIndex(def.requiresAge)))
+    if (homes.length === 0 && !wild) errors.push(`unit ${key}: no building trains it`);
+    else if (homes.length > 0 && wild) errors.push(`unit ${key}: monsters must not be trainable`);
+    else if (!wild && !homes.some((b) => ageIndex(BUILDINGS[b].requiresAge) <= ageIndex(def.requiresAge)))
       errors.push(`unit ${key}: every training building arrives after the unit's own age`);
     for (const t of def.requiresTechs ?? []) {
       if (!TECHS[t]) errors.push(`unit ${key}: requiresTechs '${t}' does not exist`);
     }
-    if (def.hp <= 0 || def.popCost <= 0 || def.speed <= 0) errors.push(`unit ${key}: non-positive vitals`);
+    if (def.hp <= 0 || def.speed <= 0 || (def.popCost <= 0 && !wild))
+      errors.push(`unit ${key}: non-positive vitals`);
   }
 
   // cultures: unique units/techs exist and are locked to the right culture

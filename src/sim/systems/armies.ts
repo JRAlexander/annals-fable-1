@@ -1,4 +1,5 @@
-import type { UnitId } from '../../content/schema';
+import type { ResourceId, UnitId } from '../../content/schema';
+import { DRAGON_HOARD, RAID_PLUNDER, RAID_POP_MULT, WILD_REALM } from '../../content/threats';
 import { UNITS } from '../../content/units';
 import { cellPos, hidx } from '../../worldgen/coords';
 import { applyLosses, resolveRound, totalUnits } from '../combat';
@@ -7,6 +8,7 @@ import { resolveStat } from '../modifiers';
 import { findPath } from '../pathfind';
 import type { Army, GameState } from '../state';
 import type { SimStreams } from '../tick';
+import { dragonTarget } from './threats';
 
 /** Base march rate in path-cells per tick, scaled by unit speed and terrain. */
 const MARCH_RATE = 0.35;
@@ -203,6 +205,7 @@ function fightSettlement(
     return;
   }
   const site = state.world.settlements[target.id];
+  const isDragon = (army.units.dragon ?? 0) > 0; // read BEFORE losses erase the corpse
   const fortHp = site.walls * 200 + (target.buildings.keep ?? 0) * 1200 - (army.siegeDamage ?? 0);
   const round = resolveRound(
     army.units,
@@ -218,7 +221,32 @@ function fightSettlement(
 
   const myStrength = totalUnits(army.units);
   const start = army.battleStartStrength || myStrength;
+  const wild = army.ownerRealm === WILD_REALM;
   if (totalUnits(target.garrison) <= 0) {
+    if (wild) {
+      // the wilds do not hold ground: plunder the stores, thin the people, move on
+      const owner = state.realms[target.ownerRealm];
+      let plunder = 0;
+      for (const res of Object.keys(owner.stock) as ResourceId[]) {
+        const taken = Math.floor(owner.stock[res] * RAID_PLUNDER);
+        owner.stock[res] -= taken;
+        plunder += taken;
+      }
+      target.pop = Math.floor(target.pop * RAID_POP_MULT);
+      out.push({ kind: 'settlementRaided', settlement: target.id, plunder });
+      if (isDragon) {
+        // the dragon is never sated — it seeks the next great town
+        const next = dragonTarget(state, target.id);
+        army.objective = { kind: 'attackSettlement', settlement: next };
+        army.phase = 'marching';
+        army.siegeDamage = 0;
+        const site = state.world.settlements[next];
+        routePath(state, army, site.i, site.j);
+        survivors.push(army);
+      }
+      // raider bands dissolve back into the wilds
+      return;
+    }
     const from = target.ownerRealm;
     target.ownerRealm = army.ownerRealm;
     target.pop = Math.floor(target.pop * 0.9);
@@ -227,8 +255,15 @@ function fightSettlement(
     out.push({ kind: 'settlementCaptured', settlement: target.id, by: army.ownerRealm, from });
     goHome();
   } else if (myStrength <= 0) {
-    out.push({ kind: 'siegeRepelled', army: army.id, settlement: target.id });
+    if (wild && isDragon) {
+      // the dragon lies slain beneath the walls — its hoard to the defenders
+      state.realms[target.ownerRealm].stock.gold += DRAGON_HOARD;
+      out.push({ kind: 'dragonSlain', realm: target.ownerRealm, hoard: DRAGON_HOARD });
+    } else {
+      out.push({ kind: 'siegeRepelled', army: army.id, settlement: target.id });
+    }
   } else if (myStrength < start * 0.3) {
+    if (wild) return; // routed raiders melt away — no march home, no disband
     out.push({ kind: 'armyRouted', army: army.id, camp: -1 });
     goHome();
   } else {

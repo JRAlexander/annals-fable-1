@@ -127,6 +127,50 @@ export function narrate(state: GameState, events: SimEvent[], rng: Rng): void {
       case 'siegeRepelled':
         say(`The walls of ${nameOf(e.settlement)} held; the besiegers lie broken before them.`, 'good');
         break;
+      case 'raidSpawned':
+        say(
+          `The wandering companies grow bold: raiders are seen on the roads toward ${nameOf(e.settlement)}.`,
+          'grim',
+        );
+        break;
+      case 'settlementRaided':
+        say(
+          `Raiders have had their way with ${nameOf(e.settlement)}: stores plundered and folk carried off.`,
+          'grim',
+        );
+        break;
+      case 'dragonAwakened':
+        say(
+          `Doom on wings: a great dragon has risen from the deep wilds, and its shadow falls toward ${nameOf(e.settlement)}.`,
+          'grim',
+        );
+        break;
+      case 'dragonSlain':
+        say(
+          `${pick(rng, VICTORY_PHRASES)} The dragon lies slain beneath the walls, and ${e.hoard} gold of its hoard is claimed by ${state.realms[e.realm].name}.`,
+          'good',
+        );
+        break;
+      case 'wonderCompleted':
+        say(
+          `In ${nameOf(e.settlement)} the Wonder of ${state.realms[e.realm].name} stands complete, and all who see it fall silent.`,
+          e.realm === 0 ? 'good' : 'grim',
+        );
+        break;
+      case 'gameWon':
+        say(
+          e.how === 'conquest'
+            ? 'Every capital bows to one banner. The chroniclers put down their pens: the realm has no rival left under heaven.'
+            : 'The Wonder has stood its season unbroken. Let the age be named for this realm, now and always.',
+          'good',
+        );
+        break;
+      case 'gameLost':
+        say(
+          'The capital has fallen, and with it the realm. Here the chronicle ends, written in another hand.',
+          'grim',
+        );
+        break;
       case 'dayEnd': {
         const d = dateOf(state.tick);
         if (d.day > 0 && d.day % DAYS_PER_YEAR === 0) {

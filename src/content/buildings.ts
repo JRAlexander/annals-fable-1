@@ -157,6 +157,16 @@ export const BUILDINGS: Record<BuildingId, BuildingDef> = {
     functions: [{ kind: 'training', units: ['lightCavalry', 'knight', 'paladin', 'camelRider'] }],
     footprint: { w: 3, d: 2 },
   },
+  wonder: {
+    id: 'wonder',
+    name: 'Wonder',
+    cost: { wood: 1000, stone: 2000, gold: 1500 },
+    buildTime: 1200, // 120 days of labor — an age unto itself
+    hp: 3000,
+    requiresAge: 'golden',
+    functions: [], // it does nothing; it IS the point (stand WONDER_DAYS → victory)
+    footprint: { w: 4, d: 4 },
+  },
 };
 
 export const BUILDING_IDS: readonly BuildingId[] = Object.keys(BUILDINGS);

@@ -20,6 +20,15 @@ const ENEMY_PHASE_COLOR: Record<string, number> = {
   fighting: 0xd83a2a,
 };
 
+// the wilds march under no banner at all — black; the dragon burns ember-red
+const WILD_PHASE_COLOR: Record<string, number> = {
+  idle: 0x1a1a1a,
+  marching: 0x24201c,
+  returning: 0x1a1a1a,
+  fighting: 0x3a2418,
+};
+const DRAGON_COLOR = 0xd84418;
+
 /**
  * Armies as banner-cones (size tracks strength, color tracks phase) and camps
  * as dark tents that vanish when cleared. Army positions interpolate between
@@ -88,14 +97,16 @@ export function createArmies(
         const x = a.prevX + (a.x - a.prevX) * alpha;
         const z = a.prevZ + (a.z - a.prevZ) * alpha;
         const y = terrainHeight(world.heightmap, x, z);
-        const sc = 0.8 + Math.sqrt(totalUnits(a.units)) * 0.12;
+        const isDragon = (a.units.dragon ?? 0) > 0;
+        const sc = isDragon ? 3.2 : 0.8 + Math.sqrt(totalUnits(a.units)) * 0.12;
         _v.set(x, y, z);
         _s.set(sc, sc, sc);
         _q.identity();
         _m.compose(_v, _q, _s);
         cones?.setMatrixAt(k, _m);
-        const palette = a.ownerRealm === 0 ? PHASE_COLOR : ENEMY_PHASE_COLOR;
-        cones?.setColorAt(k, new THREE.Color(palette[a.phase] ?? 0xc9a227));
+        const palette =
+          a.ownerRealm === 0 ? PHASE_COLOR : a.ownerRealm < 0 ? WILD_PHASE_COLOR : ENEMY_PHASE_COLOR;
+        cones?.setColorAt(k, new THREE.Color(isDragon ? DRAGON_COLOR : (palette[a.phase] ?? 0xc9a227)));
       });
       if (cones) {
         cones.count = n;

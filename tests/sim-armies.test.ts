@@ -65,10 +65,16 @@ describe('training', () => {
 });
 
 describe('armies', () => {
-  /** Build barracks, train a solid mixed force, form an army. */
+  /** Build the training buildings, train a solid mixed force, form an army. */
   function raiseArmy(sim: SimRun, units: Record<string, number>): number {
     fund(sim);
+    if (units.archer || units.skirmisher) sim.state.realms[0].age = 'flowering'; // range gate
     issueNow(sim, { kind: 'queueBuilding', settlement: 0, building: 'barracks' });
+    if (units.archer || units.skirmisher) {
+      fund(sim);
+      issueNow(sim, { kind: 'queueBuilding', settlement: 0, building: 'archeryRange' });
+      runUntil(sim, () => (sim.state.settlements[0].buildings.archeryRange ?? 0) > 0, 4000, 'range');
+    }
     runUntil(sim, () => (sim.state.settlements[0].buildings.barracks ?? 0) > 0, 2000, 'barracks');
     for (const [unit, count] of Object.entries(units)) {
       fund(sim);
@@ -92,7 +98,8 @@ describe('armies', () => {
 
   it('full loop: a strong mixed force marches, clears the camp, loots, returns', () => {
     const sim = freshSim(1234);
-    const id = raiseArmy(sim, { militia: 30, spearman: 20 });
+    // archers matter: melee-only vs an entrenched camp is a coin flip by design
+    const id = raiseArmy(sim, { militia: 30, spearman: 20, archer: 15 });
     sim.state.realms[0].stock.gold = 100; // below cap so the loot is visible
     const gold0 = sim.state.realms[0].stock.gold;
     const events = issueNow(sim, { kind: 'orderArmy', army: id, objective: { kind: 'attackCamp', camp: 0 } });
@@ -102,7 +109,8 @@ describe('armies', () => {
     expect(all.some((e) => e.kind === 'battleStarted')).toBe(true);
     expect(sim.state.realms[0].stock.gold).toBeGreaterThan(gold0);
 
-    runUntil(sim, () => sim.state.armies.length === 0, 30000, 'army home');
+    // raids (M6) may put wild armies on the map — only OUR army must come home
+    runUntil(sim, () => !sim.state.armies.some((a) => a.ownerRealm === 0), 30000, 'army home');
     // survivors are back in the garrison
     expect(totalUnits(sim.state.settlements[0].garrison)).toBeGreaterThan(0);
   });
@@ -111,9 +119,10 @@ describe('armies', () => {
     const sim = freshSim(1234);
     const id = raiseArmy(sim, { militia: 3 });
     issueNow(sim, { kind: 'orderArmy', army: id, objective: { kind: 'attackCamp', camp: 0 } });
+    const mine = () => sim.state.armies.filter((a) => a.ownerRealm === 0);
     const events = runUntil(
       sim,
-      () => sim.state.armies.length === 0 || sim.state.armies.every((a) => a.phase === 'returning'),
+      () => mine().length === 0 || mine().every((a) => a.phase === 'returning'),
       30000,
       'battle resolved',
     );

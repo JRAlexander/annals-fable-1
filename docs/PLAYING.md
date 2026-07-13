@@ -17,8 +17,48 @@ npm run dev                     # opens the dev server; changes hot-reload
 ```
 
 **Seeds**: the URL hash is the world. `#seed=7` always produces the same realm —
-share the link to share the world, click **new world** in the top bar to roll another.
-Seed 7 is a good coastal starter kingdom.
+share the link to share the world. Seed 7 is a good coastal starter kingdom.
+Your culture choice joins the hash too (`#seed=7&culture=norvik`), so a full
+game setup is one shareable link.
+
+**Saving**: the game **saves itself every game-day** (it's just your seed plus
+every order you ever gave — the whole world replays from those in seconds).
+Reloading the page continues your reign; the culture picker offers **⟳ Continue**
+when a save exists for the seed. Picking a culture card starts that culture over.
+
+## Choosing a people
+
+At boot you pick one of three cultures — bonuses, a unique unit, and two unique
+technologies each:
+
+| Culture | Character | Bonuses | Unique |
+|---|---|---|---|
+| **Valen** | agrarian | +15% food, +10% growth | Paladin · Stewardship, Chivalry |
+| **Norvik** | raiders | +1 infantry attack, +15% infantry speed, +10% wood | Huscarl · Shieldwall, Longships |
+| **Ashari** | scholars | +25% research speed, +10% gold | Camel Rider · Astronomy, Spice Routes |
+
+Two rival realms hold the other cultures and the far settlements. They build,
+research, and train by exactly your rules — and they will not stay peaceful.
+
+## Winning and losing
+
+- **Win by conquest** — take **every rival capital** (each realm's seat of power).
+- **Win by Wonder** — in the Golden Age, raise the **Wonder** (1000 🪵, 2000 ⛰, 1500 🪙,
+  120 days of labor) and **hold it for 60 days**. The top bar counts down.
+- **Lose** — your **capital falls**. That's the whole rule. Garrison it.
+
+The HUD's goal line keeps the objectives in view for your first year.
+
+## Threats
+
+- **Raids**: uncleared bandit camps send raiding bands every season (from about
+  day 45). Raiders don't take towns — they plunder your stores and carry off folk,
+  then melt away. **Clearing camps is prevention.** Raids scale with the ages.
+- **The dragon**: the first realm to reach the Golden Age wakes something in the
+  deep wilds. It burns the largest town, then the next. It *can* be slain —
+  a walled town with a keep and a full garrison will end it, and claim its hoard.
+- **Rival realms**: after an early grace period, expect war. Watch the Diplomacy
+  panel; the levy defends your towns, but a standing garrison defends them better.
 
 ## The screen
 
@@ -81,6 +121,6 @@ fled for home, harried and ashamed."*
 
 ## What's next on the roadmap
 
-Rival AI realms and playable cultures (Valen / Norvik / Ashari) arrive in M5,
-win/lose conditions in M6, and direct RTS unit control in M7+ — see
-[docs/PLAN.md](PLAN.md) for the full roadmap.
+v0.1 is complete: cultures, rival realms, war, threats, win/lose, and saves.
+Next is the **RTS layer** (M7+) — direct unit selection and control, free
+building placement, fog of war — see [docs/PLAN.md](PLAN.md) for the roadmap.

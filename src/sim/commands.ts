@@ -137,6 +137,17 @@ export function applyCommands(state: GameState, issued: IssuedCommand[], out: Si
           );
           break;
         }
+        if (def.id === 'wonder') {
+          const hasOne = state.settlements.some(
+            (x) =>
+              x.ownerRealm === realm &&
+              ((x.buildings.wonder ?? 0) > 0 || x.buildQueue.some((j) => j.building === 'wonder')),
+          );
+          if (hasOne) {
+            reject(out, realm, 'a realm raises only one Wonder');
+            break;
+          }
+        }
         const short = shortOf(r, def.cost);
         if (short) {
           reject(out, realm, `cannot afford ${def.name}: needs ${short[1]} ${short[0]}`);

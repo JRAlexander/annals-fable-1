@@ -40,6 +40,10 @@ export function aiSystem(state: GameState): IssuedCommand[] {
         ['market', 1],
         ['quarry', 1],
       ];
+      // the endgame: a rich Golden-age realm races for the Wonder
+      if (realm.age === 'golden' && count('wonder') === 0 && realm.stock.stone >= 2000) {
+        wants.unshift(['wonder', 1]);
+      }
       for (const [b, want] of wants) {
         if (count(b) < want) {
           issue({ kind: 'queueBuilding', settlement: seat.id, building: b });

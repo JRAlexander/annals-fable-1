@@ -58,6 +58,7 @@ export function createArmyPanel(
   for (const id of Object.keys(UNITS) as UnitId[]) {
     const def = UNITS[id];
     if (def.culture && def.culture !== culture) continue; // another people's pride
+    if (def.tags.includes('monster')) continue; // the wilds train their own
     const b = document.createElement('button');
     b.className = 'bm-build';
     b.innerHTML = `<b>${def.name}</b><span>${costText(id)}</span>`;
