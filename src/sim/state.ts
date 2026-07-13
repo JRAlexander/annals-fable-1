@@ -9,7 +9,7 @@ import {
   WORK_RATIO,
   type WorkJob,
 } from '../content/economy';
-import type { ResourceId } from '../content/schema';
+import type { BuildingId, ResourceId } from '../content/schema';
 import { clamp } from '../core/math';
 import { hidx } from '../worldgen/coords';
 import type { WorldData } from '../worldgen/types';
@@ -36,10 +36,20 @@ export interface SimSettlement {
   popCap: number;
   /** Fraction of pop that works. M2 may expose this to the player. */
   workRatio: number;
-  /** Allocation weights, normalized at use. M2's sliders write these via command. */
+  /** Allocation weights, normalized at use. The build menu's sliders write these via command. */
   alloc: Record<WorkJob, number>;
-  /** Max workers per job from surrounding terrain. M2 buildings ADD to this. */
+  /** Max workers per job from surrounding terrain; buildings add on top (sim/buildings.ts). */
   siteCapacity: Record<WorkJob, number>;
+  /** FIFO construction queue; only the head advances. Costs are paid at queue time. */
+  buildQueue: ConstructionJob[];
+  /** Completed buildings by id. */
+  buildings: Partial<Record<BuildingId, number>>;
+}
+
+export interface ConstructionJob {
+  building: BuildingId;
+  /** Accumulated build ticks (buildSpeed-modified). */
+  progress: number;
 }
 
 export interface GameState {
@@ -116,6 +126,8 @@ export function initGameState(world: WorldData): GameState {
       workRatio: WORK_RATIO,
       alloc,
       siteCapacity,
+      buildQueue: [],
+      buildings: {},
     };
   });
 

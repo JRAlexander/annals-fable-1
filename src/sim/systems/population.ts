@@ -5,6 +5,7 @@ import {
   POP_MILESTONES,
   STARVATION_RATE,
 } from '../../content/economy';
+import { buildingContrib } from '../buildings';
 import type { SimEvent } from '../events';
 import { resolveStat } from '../modifiers';
 import type { GameState } from '../state';
@@ -28,7 +29,8 @@ export function populationSystem(state: GameState, out: SimEvent[]): void {
       for (const s of mine) {
         const ctx = { state, realm: realm.id, settlement: s.id };
         const tier = state.world.settlements[s.id].tier;
-        s.popCap = resolveStat(ctx, HOUSING_BASE[tier], { stat: 'housingCap' });
+        const base = HOUSING_BASE[tier] + buildingContrib(s).housing;
+        s.popCap = resolveStat(ctx, base, { stat: 'housingCap' });
         if (s.pop >= s.popCap) continue;
         const growth = s.pop * resolveStat(ctx, BASE_GROWTH_PER_DAY, { stat: 'popGrowth' });
         const before = Math.floor(s.pop);

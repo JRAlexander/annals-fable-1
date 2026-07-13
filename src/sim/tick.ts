@@ -3,6 +3,7 @@ import { narrate } from './chronicle';
 import { applyCommands, type IssuedCommand } from './commands';
 import type { SimEvent } from './events';
 import type { GameState } from './state';
+import { constructionSystem } from './systems/construction';
 import { populationSystem } from './systems/population';
 import { productionSystem } from './systems/production';
 import { storageSystem } from './systems/storage';
@@ -21,6 +22,7 @@ export function advanceTick(state: GameState, issued: IssuedCommand[], streams: 
   if (state.tick === 0) events.push({ kind: 'realmFounded', realm: 0, tick: 0 });
 
   applyCommands(state, issued, events);
+  constructionSystem(state, events);
   productionSystem(state, events);
   if (isDayEnd(state.tick)) {
     populationSystem(state, events);

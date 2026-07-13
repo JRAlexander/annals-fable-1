@@ -1,10 +1,13 @@
 import { makeStreams } from '../core/rng';
+import { createConstructed } from '../render/constructedMesh';
 import { createScene } from '../render/scene';
 import type { Command, IssuedCommand } from '../sim/commands';
 import { initGameState } from '../sim/state';
 import { advanceTick } from '../sim/tick';
+import { createBuildMenu } from '../ui/buildMenu';
 import { createChronicle } from '../ui/chronicle';
 import { createHud } from '../ui/hud';
+import { createToasts } from '../ui/toasts';
 import { generateWorld } from '../worldgen/world';
 import { SPEEDS, type Speed, startLoop } from './loop';
 
@@ -20,6 +23,8 @@ function boot(): void {
   const canvas = document.getElementById('view') as HTMLCanvasElement;
   const hudEl = document.getElementById('hud')!;
   const chronicleEl = document.getElementById('chronicle')!;
+  const buildMenuEl = document.getElementById('buildmenu')!;
+  const toastsEl = document.getElementById('toasts')!;
   const loading = document.getElementById('loading')!;
 
   const seed = seedFromHash();
@@ -41,14 +46,21 @@ function boot(): void {
     pending = [];
     return batch;
   };
-  // M2's build menu and allocation sliders call enqueue(); nothing does yet in M1
-  void enqueue;
 
   const chronicle = createChronicle(chronicleEl);
+  const toasts = createToasts(toastsEl);
+  const buildMenu = createBuildMenu(buildMenuEl, enqueue);
+  const constructed = createConstructed(scene.scene, world);
   const loop = startLoop({
-    simTick: () => chronicle.push(advanceTick(state, drain(), streams)),
+    simTick: () => {
+      const events = advanceTick(state, drain(), streams);
+      chronicle.push(events);
+      toasts.push(events);
+    },
     onFrame: () => {
       hud.update(state, loop.getSpeed());
+      buildMenu.update(state);
+      constructed.sync(state);
       scene.render();
     },
   });

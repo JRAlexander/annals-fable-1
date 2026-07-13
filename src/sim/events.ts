@@ -1,4 +1,4 @@
-import type { ResourceId } from '../content/schema';
+import type { BuildingId, ResourceId } from '../content/schema';
 import type { RealmId } from './state';
 
 /**
@@ -11,5 +11,7 @@ export type SimEvent =
   | { kind: 'starvation'; settlement: number; deaths: number }
   | { kind: 'popMilestone'; settlement: number; milestone: number }
   | { kind: 'storageFull'; realm: RealmId; resource: ResourceId }
+  | { kind: 'buildingQueued'; settlement: number; building: BuildingId }
+  | { kind: 'buildingCompleted'; settlement: number; building: BuildingId }
   | { kind: 'commandRejected'; realm: RealmId; reason: string }
   | { kind: 'chronicle'; tick: number; text: string; tone: 'neutral' | 'good' | 'grim' };
