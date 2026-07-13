@@ -6,6 +6,8 @@ indirect "ruler mode" and growing into full RTS control.
 
 The seed is the save: `#seed=1234` in the URL fully determines the world.
 
+**▶ Play it:** https://jralexander.github.io/annals-fable-1/ — and read **[the player guide](docs/PLAYING.md)** for controls, the age climb, and how to raise an army.
+
 ## Status
 
 **M0** — deterministic worldgen (terrain, rivers, biomes, settlements, roads) ported from ANNALS to
