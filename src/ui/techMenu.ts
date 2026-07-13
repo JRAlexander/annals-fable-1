@@ -59,7 +59,7 @@ export interface TechMenu {
 }
 
 /** The realm's book of knowledge: four age columns, one research slot, one Advance button. */
-export function createTechMenu(el: HTMLElement, enqueue: (cmd: Command) => void): TechMenu {
+export function createTechMenu(el: HTMLElement, enqueue: (cmd: Command) => void, culture?: string): TechMenu {
   el.innerHTML = `
     <div class="tm-head">
       <span id="tm-age" class="tm-age"></span>
@@ -89,7 +89,11 @@ export function createTechMenu(el: HTMLElement, enqueue: (cmd: Command) => void)
     const col = document.createElement('div');
     col.className = 'tm-col';
     col.innerHTML = `<div class="tm-colhead">${AGES[age].name}</div>`;
-    for (const def of Object.values(TECHS).filter((t) => t.age === age)) {
+    // another culture's unique techs are not for us — they never appear
+    const visible = Object.values(TECHS).filter(
+      (t) => t.age === age && (!t.culture || t.culture === culture),
+    );
+    for (const def of visible) {
       const card = document.createElement('div');
       card.className = 'tm-card';
       card.innerHTML = `

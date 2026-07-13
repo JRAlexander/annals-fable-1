@@ -3,6 +3,7 @@ import { narrate } from './chronicle';
 import { applyCommands, type IssuedCommand } from './commands';
 import type { SimEvent } from './events';
 import type { GameState } from './state';
+import { aiSystem } from './systems/ai';
 import { armiesSystem } from './systems/armies';
 import { constructionSystem } from './systems/construction';
 import { populationSystem } from './systems/population';
@@ -24,7 +25,9 @@ export function advanceTick(state: GameState, issued: IssuedCommand[], streams: 
   const events: SimEvent[] = [];
   if (state.tick === 0) events.push({ kind: 'realmFounded', realm: 0, tick: 0 });
 
-  applyCommands(state, issued, events);
+  // rival realms think on the daily boundary and speak the same command language
+  const aiCommands = aiSystem(state);
+  applyCommands(state, aiCommands.length ? [...issued, ...aiCommands] : issued, events);
   constructionSystem(state, events);
   researchSystem(state, events);
   trainingSystem(state, events);

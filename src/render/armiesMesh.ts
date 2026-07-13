@@ -12,6 +12,14 @@ const PHASE_COLOR: Record<string, number> = {
   fighting: 0xc94a3a,
 };
 
+// rival banners are dark red, brightening when they close for the kill
+const ENEMY_PHASE_COLOR: Record<string, number> = {
+  idle: 0x6a1f1f,
+  marching: 0x8a2a22,
+  returning: 0x5a2a2a,
+  fighting: 0xd83a2a,
+};
+
 /**
  * Armies as banner-cones (size tracks strength, color tracks phase) and camps
  * as dark tents that vanish when cleared. Army positions interpolate between
@@ -86,7 +94,8 @@ export function createArmies(
         _q.identity();
         _m.compose(_v, _q, _s);
         cones?.setMatrixAt(k, _m);
-        cones?.setColorAt(k, new THREE.Color(PHASE_COLOR[a.phase] ?? 0xc9a227));
+        const palette = a.ownerRealm === 0 ? PHASE_COLOR : ENEMY_PHASE_COLOR;
+        cones?.setColorAt(k, new THREE.Color(palette[a.phase] ?? 0xc9a227));
       });
       if (cones) {
         cones.count = n;

@@ -204,6 +204,29 @@
         overflow: hidden; margin-top: 3px;
       }
       #techmenu .tm-card .bar div { height: 100%; width: 0; background: #c9a227; }
+      #culturepicker {
+        position: fixed; inset: 0; display: none;
+        align-items: center; justify-content: center;
+        background: rgba(12, 14, 18, 0.55); z-index: 20;
+      }
+      #culturepicker .cp-box {
+        padding: 26px 30px; text-align: center;
+        background: rgba(18, 16, 12, 0.95);
+        border: 1px solid rgba(201, 162, 39, 0.5); border-radius: 6px;
+        font: 13px/1.5 Georgia, 'Times New Roman', serif; color: #e9dcc3;
+      }
+      #culturepicker .cp-title { font-size: 19px; letter-spacing: 4px; margin-bottom: 18px; }
+      #culturepicker .cp-cards { display: flex; gap: 14px; }
+      #culturepicker .cp-card {
+        display: flex; flex-direction: column; gap: 8px; align-items: flex-start;
+        width: 200px; padding: 14px 16px; text-align: left;
+        background: rgba(233, 220, 195, 0.06); border: 1px solid;
+        color: #e9dcc3; font: inherit; border-radius: 5px; cursor: pointer;
+      }
+      #culturepicker .cp-card:hover { background: rgba(233, 220, 195, 0.16); }
+      #culturepicker .cp-card b { font-size: 16px; letter-spacing: 2px; }
+      #culturepicker .cp-card span { color: #d8c88f; font-size: 12px; }
+      #culturepicker .cp-card i { color: #9a8f76; font-size: 11px; font-style: normal; }
     </style>
   </head>
   <body>
@@ -214,6 +237,7 @@
     <div id="armypanel"></div>
     <div id="techmenu"></div>
     <div id="toasts"></div>
+    <div id="culturepicker"></div>
     <div id="loading">
       <div style="letter-spacing:6px">R E A L M S</div>
       <div style="opacity:0.6;font-size:12px">forging the world…</div>

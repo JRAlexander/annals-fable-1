@@ -172,6 +172,10 @@ export function applyCommands(state: GameState, issued: IssuedCommand[], out: Si
           reject(out, realm, `${def.name} requires ${AGES[def.age].name}`);
           break;
         }
+        if (def.culture && def.culture !== r.culture) {
+          reject(out, realm, `${def.name} is a secret of the ${def.culture}`);
+          break;
+        }
         const missing = def.prereqs.find((p) => !r.researchedTechs.includes(p));
         if (missing) {
           reject(out, realm, `${def.name} requires ${TECHS[missing]?.name ?? missing} first`);
@@ -222,6 +226,10 @@ export function applyCommands(state: GameState, issued: IssuedCommand[], out: Si
             realm,
             `${def.name} requires the ${TECHS[missingTech]?.name ?? missingTech} technology`,
           );
+          break;
+        }
+        if (def.culture && def.culture !== r.culture) {
+          reject(out, realm, `only the ${def.culture} may train the ${def.name}`);
           break;
         }
         const trainer = Object.entries(BUILDINGS).find(
@@ -338,13 +346,31 @@ export function applyCommands(state: GameState, issued: IssuedCommand[], out: Si
           army.phase = 'marching';
           routePath(state, army, site.i, site.j);
           out.push({ kind: 'armyDeparted', army: army.id, camp: camp.id });
-        } else if (cmd.objective.kind === 'returnHome') {
+        } else if (cmd.objective.kind === 'attackSettlement') {
+          const target = state.settlements[cmd.objective.settlement];
+          if (!target) {
+            reject(out, realm, `no such settlement ${cmd.objective.settlement}`);
+            break;
+          }
+          if (target.ownerRealm === realm) {
+            reject(out, realm, 'that settlement is already yours');
+            break;
+          }
+          const r = state.realms[realm];
+          if (!r.atWarWith.includes(target.ownerRealm)) {
+            reject(out, realm, `you are not at war with ${state.realms[target.ownerRealm].name}`);
+            break;
+          }
+          const site = state.world.settlements[target.id];
+          army.objective = { kind: 'attackSettlement', settlement: target.id };
+          army.phase = 'marching';
+          routePath(state, army, site.i, site.j);
+          out.push({ kind: 'armyMarchedOnSettlement', army: army.id, settlement: target.id });
+        } else {
           army.objective = { kind: 'returnHome' };
           army.phase = 'returning';
           const home = state.world.settlements[army.home];
           routePath(state, army, home.i, home.j);
-        } else {
-          reject(out, realm, `objective '${cmd.objective.kind}' not implemented yet`);
         }
         break;
       }
@@ -377,6 +403,22 @@ export function applyCommands(state: GameState, issued: IssuedCommand[], out: Si
         pay(r, targetDef.advanceCost);
         r.research = { kind: 'age', progress: 0 };
         out.push({ kind: 'ageAdvanceStarted', realm, age: target });
+        break;
+      }
+      case 'declareWar': {
+        const r = state.realms[realm];
+        const target = state.realms[cmd.target];
+        if (!target || cmd.target === realm) {
+          reject(out, realm, 'no such rival realm');
+          break;
+        }
+        if (r.atWarWith.includes(cmd.target)) {
+          reject(out, realm, `already at war with ${target.name}`);
+          break;
+        }
+        r.atWarWith.push(cmd.target);
+        target.atWarWith.push(realm);
+        out.push({ kind: 'warDeclared', realm, target: cmd.target });
         break;
       }
       default:

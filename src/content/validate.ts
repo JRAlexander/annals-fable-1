@@ -1,5 +1,6 @@
 import { AGE_ORDER, AGES, ageIndex } from './ages';
 import { BUILDINGS } from './buildings';
+import { CULTURES } from './cultures';
 import type { Cost, ResourceId } from './schema';
 import { TECHS } from './techs';
 import { UNITS } from './units';
@@ -107,6 +108,36 @@ export function validateContent(): string[] {
       if (!TECHS[t]) errors.push(`unit ${key}: requiresTechs '${t}' does not exist`);
     }
     if (def.hp <= 0 || def.popCost <= 0 || def.speed <= 0) errors.push(`unit ${key}: non-positive vitals`);
+  }
+
+  // cultures: unique units/techs exist and are locked to the right culture
+  for (const [key, def] of Object.entries(CULTURES)) {
+    if (def.id !== key) errors.push(`culture ${key}: id '${def.id}' mismatch`);
+    const uu = UNITS[def.uniqueUnit];
+    if (!uu) errors.push(`culture ${key}: uniqueUnit '${def.uniqueUnit}' does not exist`);
+    else if (uu.culture !== key)
+      errors.push(`culture ${key}: uniqueUnit '${def.uniqueUnit}' not locked to it`);
+    for (const t of def.uniqueTechs) {
+      const tech = TECHS[t];
+      if (!tech) errors.push(`culture ${key}: uniqueTech '${t}' does not exist`);
+      else if (tech.culture !== key) errors.push(`culture ${key}: uniqueTech '${t}' not locked to it`);
+    }
+    for (const v of Object.values(def.architecture.palette)) {
+      if (!Number.isFinite(v)) errors.push(`culture ${key}: palette value not finite`);
+    }
+    for (const m of def.bonuses) {
+      if (m.op === 'mul' && (!Number.isFinite(m.value) || m.value <= 0))
+        errors.push(`culture ${key}: mul bonus must be finite and > 0`);
+    }
+  }
+  // reverse: culture-locked content must be claimed by its culture
+  for (const [key, def] of Object.entries(UNITS)) {
+    if (def.culture && CULTURES[def.culture]?.uniqueUnit !== key)
+      errors.push(`unit ${key}: locked to '${def.culture}' but not its uniqueUnit`);
+  }
+  for (const [key, def] of Object.entries(TECHS)) {
+    if (def.culture && !CULTURES[def.culture]?.uniqueTechs.includes(key))
+      errors.push(`tech ${key}: locked to '${def.culture}' but not in its uniqueTechs`);
   }
 
   // every advancement is satisfiable: each non-terminal age offers enough building types
