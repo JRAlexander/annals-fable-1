@@ -29,6 +29,10 @@ export interface Realm {
   name: string;
   isPlayer: boolean;
   culture: string | null; // set at culture select (M5)
+  /** Seat of power — losing it ends the game (player) or the realm's claim (rivals). */
+  capital: number;
+  /** Day the realm's Wonder stood complete, or null. Victory clock reference. */
+  wonderDay: number | null;
   stock: Record<ResourceId, number>; // shared AoE-style stockpile
   storageCap: Record<ResourceId, number>; // derived cache, recomputed by the storage system
   age: AgeId;
@@ -118,6 +122,8 @@ export interface BanditCamp {
   cleared: boolean;
 }
 
+export type GameOutcome = { kind: 'victory'; how: 'conquest' | 'wonder' } | { kind: 'defeat' };
+
 export interface GameState {
   seed: number;
   /** Absolute tick; TICKS_PER_DAY ticks = 1 game day. */
@@ -127,6 +133,12 @@ export interface GameState {
   armies: Army[];
   nextArmyId: number;
   camps: BanditCamp[]; // index === WorldData.camps id
+  /** Latched by the victory system; the sim keeps ticking after — the world lives on. */
+  outcome: GameOutcome | null;
+  /** True once the one dragon of this world has been woken (whether it still lives). */
+  dragonWoken: boolean;
+  /** Day each camp last sent raiders, keyed by camp id. -1 = never. */
+  lastRaidDay: number[];
   /** Static geography — regenerable from seed, EXCLUDED from the state hash. */
   world: WorldData;
 }
@@ -172,7 +184,7 @@ function scanSiteCapacity(world: WorldData, siteIdx: number): Record<WorkJob, nu
  * settlements that maximize (distance to capital + distance to each other).
  * Every settlement joins its nearest seat. Pure geometry — no rng.
  */
-function partitionSettlements(world: WorldData): number[] {
+function partitionSettlements(world: WorldData): { owners: number[]; seats: number[] } {
   const cap = world.capital;
   const dist = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.hypot(a.x - b.x, a.z - b.z);
   const others = world.settlements.filter((s) => s.id !== cap.id);
@@ -191,7 +203,7 @@ function partitionSettlements(world: WorldData): number[] {
     }
   }
   const seats = [cap, bestA, bestB];
-  return world.settlements.map((s) => {
+  const owners = world.settlements.map((s) => {
     let owner = 0;
     let best = Number.POSITIVE_INFINITY;
     seats.forEach((seat, r) => {
@@ -203,6 +215,7 @@ function partitionSettlements(world: WorldData): number[] {
     });
     return owner;
   });
+  return { owners, seats: seats.map((s) => s.id) };
 }
 
 /**
@@ -211,17 +224,21 @@ function partitionSettlements(world: WorldData): number[] {
  * rivals holding the remaining cultures in fixed order.
  */
 export function initGameState(world: WorldData, playerCulture: CultureId = 'valen'): GameState {
-  const owners = world.settlements.length >= 3 ? partitionSettlements(world) : world.settlements.map(() => 0);
+  const { owners, seats } =
+    world.settlements.length >= 3
+      ? partitionSettlements(world)
+      : {
+          owners: world.settlements.map(() => 0),
+          seats: [world.capital.id, world.capital.id, world.capital.id],
+        };
   const rivalCultures = CULTURE_IDS.filter((c) => c !== playerCulture);
-  const seatName = (realmId: number): string => {
-    const seat = world.settlements.find((s, i) => owners[i] === realmId);
-    return seat?.name ?? world.capital.name;
-  };
   const mkRealm = (id: number, isPlayer: boolean, culture: CultureId): Realm => ({
     id,
-    name: `The Realm of ${isPlayer ? world.capital.name : seatName(id)}`,
+    name: `The Realm of ${world.settlements[seats[id]]?.name ?? world.capital.name}`,
     isPlayer,
     culture,
+    capital: seats[id] ?? world.capital.id,
+    wonderDay: null,
     stock: { ...STARTING_STOCK },
     storageCap: { food: 0, wood: 0, stone: 0, gold: 0 }, // filled by the storage system on tick 0
     age: 'founding',
@@ -274,5 +291,17 @@ export function initGameState(world: WorldData, playerCulture: CultureId = 'vale
     };
   });
 
-  return { seed: world.seed, tick: 0, realms, settlements, armies: [], nextArmyId: 0, camps, world };
+  return {
+    seed: world.seed,
+    tick: 0,
+    realms,
+    settlements,
+    armies: [],
+    nextArmyId: 0,
+    camps,
+    outcome: null,
+    dragonWoken: false,
+    lastRaidDay: camps.map(() => -1),
+    world,
+  };
 }

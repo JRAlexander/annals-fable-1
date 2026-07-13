@@ -33,4 +33,12 @@ export type SimEvent =
   | { kind: 'settlementCaptured'; settlement: number; by: RealmId; from: RealmId }
   | { kind: 'siegeRepelled'; army: number; settlement: number }
   | { kind: 'commandRejected'; realm: RealmId; reason: string }
+  // M6: threats and endings
+  | { kind: 'raidSpawned'; camp: number; settlement: number; strength: number }
+  | { kind: 'settlementRaided'; settlement: number; plunder: number }
+  | { kind: 'dragonAwakened'; settlement: number }
+  | { kind: 'dragonSlain'; realm: RealmId; hoard: number }
+  | { kind: 'wonderCompleted'; realm: RealmId; settlement: number }
+  | { kind: 'gameWon'; how: 'conquest' | 'wonder' }
+  | { kind: 'gameLost' }
   | { kind: 'chronicle'; tick: number; text: string; tone: 'neutral' | 'good' | 'grim' };

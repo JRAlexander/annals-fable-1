@@ -2,6 +2,7 @@ import type { Speed } from '../app/loop';
 import { AGES } from '../content/ages';
 import { CULTURES } from '../content/cultures';
 import type { AgeId, ResourceId } from '../content/schema';
+import { WONDER_DAYS } from '../content/threats';
 import type { GameState } from '../sim/state';
 import { DAYS_PER_YEAR, dateOf, TICKS_PER_DAY } from '../sim/time';
 
@@ -33,9 +34,11 @@ export function createHud(el: HTMLElement, onSpeed: (s: Speed) => void, onTechTo
     <span id="hud-pop"></span>
     <span id="hud-age"></span>
     <span id="hud-date"></span>
+    <span id="hud-goal" class="objectives"></span>
     <span id="hud-speed"></span>
   `;
   const realmEl = el.querySelector('#hud-realm') as HTMLElement;
+  const goalEl = el.querySelector('#hud-goal') as HTMLElement;
   const resEl = el.querySelector('#hud-res') as HTMLElement;
   const popEl = el.querySelector('#hud-pop') as HTMLElement;
   const dateEl = el.querySelector('#hud-date') as HTMLElement;
@@ -112,6 +115,18 @@ export function createHud(el: HTMLElement, onSpeed: (s: Speed) => void, onTechTo
       setText(ageEl, `${AGE_GLYPH[age]} ${AGES[age].name}`);
       const d = dateOf(state.tick);
       setText(dateEl, `Year ${d.year} · Day ${((d.day % DAYS_PER_YEAR) + 1).toString()}`);
+
+      // the goal line: outcome > wonder countdown > standing objectives
+      if (state.outcome) {
+        setText(goalEl, state.outcome.kind === 'victory' ? '👑 THE REALM HAS WON' : '☠ THE REALM HAS FALLEN');
+      } else if (realm.wonderDay !== null) {
+        const left = Math.max(0, WONDER_DAYS - (d.day - realm.wonderDay));
+        setText(goalEl, `✦ The Wonder stands — ${left} days to glory`);
+      } else if (d.year <= 1) {
+        setText(goalEl, 'Goal: take every capital, or raise a Wonder · your capital must not fall');
+      } else {
+        setText(goalEl, '');
+      }
 
       for (const [s, b] of buttons) b.classList.toggle('active', s === speed);
     },

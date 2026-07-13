@@ -10,7 +10,9 @@ import { populationSystem } from './systems/population';
 import { productionSystem } from './systems/production';
 import { researchSystem } from './systems/research';
 import { storageSystem } from './systems/storage';
+import { threatsSystem } from './systems/threats';
 import { trainingSystem } from './systems/training';
+import { victorySystem } from './systems/victory';
 import { dateOf, isDayEnd } from './time';
 
 /** The world stream is spent during generateWorld; the sim uses the rest. */
@@ -28,6 +30,7 @@ export function advanceTick(state: GameState, issued: IssuedCommand[], streams: 
   // rival realms think on the daily boundary and speak the same command language
   const aiCommands = aiSystem(state);
   applyCommands(state, aiCommands.length ? [...issued, ...aiCommands] : issued, events);
+  threatsSystem(state, events); // the wilds move before the day's marching
   constructionSystem(state, events);
   researchSystem(state, events);
   trainingSystem(state, events);
@@ -39,6 +42,7 @@ export function advanceTick(state: GameState, issued: IssuedCommand[], streams: 
     events.push({ kind: 'dayEnd', tick: state.tick, day: d.day, year: d.year });
   }
   storageSystem(state, events);
+  victorySystem(state, events); // endings are judged on the finished day
   narrate(state, events, streams.history);
 
   state.tick++;

@@ -5,8 +5,9 @@ import { createArmies } from '../render/armiesMesh';
 import { createConstructed } from '../render/constructedMesh';
 import { createScene } from '../render/scene';
 import type { Command, IssuedCommand } from '../sim/commands';
-import { initGameState } from '../sim/state';
-import { advanceTick } from '../sim/tick';
+import type { SimEvent } from '../sim/events';
+import { type GameState, initGameState } from '../sim/state';
+import { advanceTick, type SimStreams } from '../sim/tick';
 import { createArmyPanel } from '../ui/armyPanel';
 import { createBuildMenu } from '../ui/buildMenu';
 import { createChronicle } from '../ui/chronicle';
@@ -15,6 +16,7 @@ import { createTechMenu } from '../ui/techMenu';
 import { createToasts } from '../ui/toasts';
 import { generateWorld } from '../worldgen/world';
 import { SPEEDS, type Speed, startLoop } from './loop';
+import { anySaveFor, clearSave, createRecorder, loadSave, replay } from './save';
 
 function seedFromHash(): number {
   const m = location.hash.match(/seed=(\d+)/);
@@ -29,6 +31,11 @@ function cultureFromHash(): CultureId | null {
   return m && CULTURE_IDS.includes(m[1]) ? m[1] : null;
 }
 
+function setCultureInHash(id: CultureId): void {
+  const clean = location.hash.replace(/&culture=\w+/, '');
+  history.replaceState(null, '', `${clean}&culture=${id}`);
+}
+
 function bonusBlurb(bonuses: Modifier[]): string {
   return bonuses
     .map((b) => {
@@ -39,14 +46,36 @@ function bonusBlurb(bonuses: Modifier[]): string {
     .join(' · ');
 }
 
-/** Overlay with one card per culture; the choice joins the seed in the URL hash. */
-function pickCulture(el: HTMLElement): Promise<CultureId> {
+/**
+ * Overlay with one card per culture (plus Continue when a save exists for
+ * this seed); the choice joins the seed in the URL hash. Picking a culture
+ * card starts a NEW game for that culture — any old save for it is cleared.
+ */
+function pickCulture(el: HTMLElement, seed: number): Promise<{ culture: CultureId; resume: boolean }> {
   return new Promise((resolve) => {
     el.style.display = 'flex';
     const box = document.createElement('div');
     box.className = 'cp-box';
     box.innerHTML = '<div class="cp-title">Choose your people</div><div class="cp-cards"></div>';
     const cards = box.querySelector('.cp-cards') as HTMLElement;
+
+    const save = anySaveFor(seed);
+    if (save) {
+      const cont = document.createElement('button');
+      cont.className = 'cp-card cp-continue';
+      cont.innerHTML = `
+        <b>⟳ Continue</b>
+        <span>${CULTURES[save.culture]?.name ?? save.culture} · day ${Math.floor(save.tick / 10)}</span>
+        <i>the chronicle picks up where it left off</i>
+      `;
+      cont.addEventListener('click', () => {
+        setCultureInHash(save.culture);
+        el.style.display = 'none';
+        resolve({ culture: save.culture, resume: true });
+      });
+      cards.appendChild(cont);
+    }
+
     for (const id of CULTURE_IDS) {
       const c = CULTURES[id];
       const card = document.createElement('button');
@@ -59,13 +88,46 @@ function pickCulture(el: HTMLElement): Promise<CultureId> {
         <i>unique: ${c.uniqueUnit} · ${c.uniqueTechs.join(', ')}</i>
       `;
       card.addEventListener('click', () => {
-        history.replaceState(null, '', `${location.hash}&culture=${id}`);
+        setCultureInHash(id);
         el.style.display = 'none';
-        resolve(id);
+        clearSave(seed, id); // an explicit pick is a fresh start
+        resolve({ culture: id, resume: false });
       });
       cards.appendChild(card);
     }
+    box.insertAdjacentHTML(
+      'beforeend',
+      `<div class="cp-help">Win by taking every rival capital, or by raising a Wonder and holding it. Lose your capital, lose everything.<br>
+       Build (right panel) · Army &amp; Diplomacy (middle panel) · Tech (T) · Speed 1/2/3, Space pauses. The game saves itself each day.</div>`,
+    );
     el.appendChild(box);
+  });
+}
+
+/** The end of the story, shown once; the world keeps turning behind it. */
+function showEndScreen(el: HTMLElement, won: boolean, how: string): void {
+  el.innerHTML = `
+    <div class="es-box ${won ? 'es-win' : 'es-loss'}">
+      <div class="es-title">${won ? 'VICTORY' : 'DEFEAT'}</div>
+      <div class="es-sub">${
+        won
+          ? how === 'conquest'
+            ? 'Every capital bows to your banner. The realm has no rival left under heaven.'
+            : 'The Wonder has stood its season unbroken. The age will bear your name.'
+          : 'Your capital has fallen. The chronicle ends, written in another hand.'
+      }</div>
+      <div class="es-actions">
+        <button id="es-watch">Keep watching the world</button>
+        <button id="es-new">New world</button>
+      </div>
+    </div>
+  `;
+  el.style.display = 'flex';
+  (el.querySelector('#es-watch') as HTMLElement).addEventListener('click', () => {
+    el.style.display = 'none';
+  });
+  (el.querySelector('#es-new') as HTMLElement).addEventListener('click', () => {
+    location.hash = `#seed=${Math.floor(Math.random() * 100000)}`; // hashchange reloads
   });
 }
 
@@ -79,22 +141,44 @@ async function boot(): Promise<void> {
   const toastsEl = document.getElementById('toasts')!;
   const loading = document.getElementById('loading')!;
   const pickerEl = document.getElementById('culturepicker')!;
+  const endEl = document.getElementById('endscreen')!;
 
   const seed = seedFromHash();
   const world = generateWorld(seed);
-  const { history: historyRng, combat, ai } = makeStreams(seed);
-  const streams = { history: historyRng, combat, ai };
   const scene = createScene(world, canvas);
   loading.style.display = 'none';
   scene.render(); // one frame behind the picker, so the choice is made over a living world
-  const culture = cultureFromHash() ?? (await pickCulture(pickerEl));
-  const state = initGameState(world, culture);
+
+  const fromHash = cultureFromHash();
+  const picked = fromHash
+    ? { culture: fromHash, resume: true } // a reload continues the reign
+    : await pickCulture(pickerEl, seed);
+  const culture = picked.culture;
+
+  // resume from the save when there is one; otherwise a fresh founding
+  const save = picked.resume ? loadSave(seed, culture) : null;
+  let state: GameState;
+  let streams: SimStreams;
+  let restoredChronicle: SimEvent[] = [];
+  if (save) {
+    const restored = replay(save);
+    state = restored.state;
+    streams = restored.streams;
+    restoredChronicle = restored.chronicleTail;
+  } else {
+    const { history: historyRng, combat, ai } = makeStreams(seed);
+    streams = { history: historyRng, combat, ai };
+    state = initGameState(world, culture);
+  }
+  const recorder = createRecorder(seed, culture, save?.commands ?? []);
 
   // the command queue — the ONLY path from input to sim state (save = seed + this log)
-  let seq = 0;
+  let seq = save ? save.commands.length : 0;
   let pending: IssuedCommand[] = [];
   const enqueue = (cmd: Command) => {
-    pending.push({ tick: state.tick, realm: 0, seq: seq++, cmd });
+    const issued: IssuedCommand = { tick: state.tick, realm: 0, seq: seq++, cmd };
+    pending.push(issued);
+    recorder.record(issued);
   };
   const drain = () => {
     const batch = pending;
@@ -103,17 +187,27 @@ async function boot(): Promise<void> {
   };
 
   const chronicle = createChronicle(chronicleEl);
+  if (restoredChronicle.length) chronicle.push(restoredChronicle);
   const toasts = createToasts(toastsEl);
   const buildMenu = createBuildMenu(buildMenuEl, enqueue);
   const armyPanel = createArmyPanel(armyPanelEl, enqueue, culture);
   const techMenu = createTechMenu(techMenuEl, enqueue, culture);
   const constructed = createConstructed(scene.scene, world);
   const armies = createArmies(scene.scene, world);
+  let ended = state.outcome !== null; // a replayed ending is not re-announced
   const loop = startLoop({
     simTick: () => {
       const events = advanceTick(state, drain(), streams);
       chronicle.push(events);
       toasts.push(events, state);
+      for (const e of events) {
+        if (e.kind === 'dayEnd') recorder.autosave(state.tick);
+        if (!ended && (e.kind === 'gameWon' || e.kind === 'gameLost')) {
+          ended = true;
+          recorder.autosave(state.tick);
+          showEndScreen(endEl, e.kind === 'gameWon', e.kind === 'gameWon' ? e.how : '');
+        }
+      }
     },
     onFrame: (alpha) => {
       hud.update(state, loop.getSpeed());
@@ -130,6 +224,9 @@ async function boot(): Promise<void> {
     (s) => loop.setSpeed(s),
     () => techMenu.toggle(),
   );
+
+  // debug/verification hook — the sim is still command-driven; this is a window for tests
+  (window as unknown as Record<string, unknown>).__realms = { state, enqueue };
 
   window.addEventListener('keydown', (e) => {
     if (e.code === 'Space') {

@@ -170,6 +170,22 @@ export const UNITS: Record<UnitId, UnitDef> = {
     siegeMult: 25,
     requiresAge: 'highKingdom',
   },
+  // no building trains the dragon — it belongs to the wild (threats system)
+  dragon: {
+    id: 'dragon',
+    name: 'Dragon',
+    tags: ['monster'],
+    cost: {},
+    trainTime: 0,
+    popCost: 0,
+    hp: 3500,
+    attack: 90,
+    range: 1,
+    armor: { melee: 6, pierce: 10 },
+    speed: 2.2,
+    siegeMult: 12, // stone melts
+    requiresAge: 'golden',
+  },
 };
 
 export const UNIT_IDS: readonly UnitId[] = Object.keys(UNITS);

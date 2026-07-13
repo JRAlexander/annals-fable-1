@@ -227,6 +227,37 @@
       #culturepicker .cp-card b { font-size: 16px; letter-spacing: 2px; }
       #culturepicker .cp-card span { color: #d8c88f; font-size: 12px; }
       #culturepicker .cp-card i { color: #9a8f76; font-size: 11px; font-style: normal; }
+      #culturepicker .cp-continue { border-color: #c9a227; background: rgba(201, 162, 39, 0.15); }
+      #culturepicker .cp-continue b { color: #c9a227; }
+      #culturepicker .cp-help {
+        margin-top: 16px; font-size: 11.5px; color: #9a8f76; line-height: 1.6; max-width: 640px;
+      }
+      #endscreen {
+        position: fixed; inset: 0; display: none;
+        align-items: center; justify-content: center;
+        background: rgba(12, 14, 18, 0.6); z-index: 30;
+      }
+      #endscreen .es-box {
+        padding: 34px 46px; text-align: center;
+        background: rgba(18, 16, 12, 0.96); border-radius: 6px;
+        font: 13px/1.6 Georgia, 'Times New Roman', serif; color: #e9dcc3;
+      }
+      #endscreen .es-win { border: 2px solid #c9a227; }
+      #endscreen .es-loss { border: 2px solid #c94a3a; }
+      #endscreen .es-title { font-size: 30px; letter-spacing: 10px; margin-bottom: 10px; }
+      #endscreen .es-win .es-title { color: #c9a227; }
+      #endscreen .es-loss .es-title { color: #c94a3a; }
+      #endscreen .es-sub { color: #d8c88f; max-width: 420px; }
+      #endscreen .es-actions { margin-top: 20px; display: flex; gap: 10px; justify-content: center; }
+      #endscreen button {
+        background: rgba(233, 220, 195, 0.1); border: 1px solid rgba(233, 220, 195, 0.35);
+        color: #e9dcc3; font: inherit; padding: 6px 18px; border-radius: 3px; cursor: pointer;
+      }
+      #endscreen button:hover { background: rgba(233, 220, 195, 0.22); }
+      #hud .objectives {
+        font-size: 11px; color: #9a8f76; letter-spacing: 0.5px;
+      }
+      #hud .objectives b { color: #d8c88f; }
     </style>
   </head>
   <body>
@@ -238,6 +269,7 @@
     <div id="techmenu"></div>
     <div id="toasts"></div>
     <div id="culturepicker"></div>
+    <div id="endscreen"></div>
     <div id="loading">
       <div style="letter-spacing:6px">R E A L M S</div>
       <div style="opacity:0.6;font-size:12px">forging the world…</div>
