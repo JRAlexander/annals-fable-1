@@ -3,6 +3,7 @@ import type { SimEvent } from '../events';
 import { findPath, pathReaches } from '../pathfind';
 import type { Army, GameState, UnitCounts } from '../state';
 import { dateOf, isDayEnd } from '../time';
+import { spawnArmyUnits } from '../unitStore';
 
 /**
  * The wilds strike back (M6): uncleared bandit camps send raiding bands on a
@@ -48,6 +49,7 @@ function spawnWildArmy(
     battleStartStrength: 0,
   };
   state.armies.push(army);
+  spawnArmyUnits(state, army, units); // raiders are soldiers too (M8a)
   return army;
 }
 

@@ -88,8 +88,15 @@ coming. (The chronicle's annalist, as ever, knows all — read it.)
 
 ## Commanding on the map (RTS controls)
 
-- **Left click** an army banner to select it; **left-drag** a box to select several; **Shift-click** adds; **Esc** or clicking empty ground clears.
-- **Right click** with a selection to give orders: open ground → **march there and hold**; an enemy army → **attack it**; a bandit camp → **assault it**; an enemy town (at war) → **besiege it**.
+- **Left click** an army banner to select the whole army; **left-drag a box over
+  soldiers to select them individually** — the chip at the bottom shows what you
+  hold. **Shift-click** adds armies; **Esc** or clicking empty ground clears.
+- **Split and command (per-unit micro)**: with soldiers box-selected, right-click
+  anywhere — the chosen soldiers **detach into a new army** under their own banner
+  and march to the point (or at the enemy/camp/town you clicked). Peel your archers
+  away from the line, send half the host home, screen a raid with a picket — every
+  soldier is a real entity with its own place in the column.
+- **Right click** with an army selected: open ground → **march there and hold**; an enemy army → **attack it**; a bandit camp → **assault it**; an enemy town (at war) → **besiege it**.
 - **Middle-drag** orbits the camera, **scroll** zooms.
 - Hostile armies that meet in the open **fight a field battle** — you can intercept raiders and invading armies before they reach your towns (and your token forces can be cut down on the road, so escort matters).
 - The panel dropdown still works for everything if you prefer menus.
