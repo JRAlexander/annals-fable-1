@@ -3,6 +3,7 @@ import type { CultureId, Modifier } from '../content/schema';
 import { makeStreams } from '../core/rng';
 import { createArmies } from '../render/armiesMesh';
 import { createConstructed } from '../render/constructedMesh';
+import { createFog } from '../render/fogMesh';
 import { createScene } from '../render/scene';
 import type { Command, IssuedCommand } from '../sim/commands';
 import type { SimEvent } from '../sim/events';
@@ -18,6 +19,14 @@ import { generateWorld } from '../worldgen/world';
 import { createInput, describeSelection } from './input';
 import { SPEEDS, type Speed, startLoop } from './loop';
 import { anySaveFor, clearSave, createRecorder, loadSave, replay } from './save';
+import {
+  accumulate,
+  computeVisibility,
+  isExploredAt,
+  isVisibleAt,
+  packExplored,
+  unpackExplored,
+} from './visibility';
 
 function seedFromHash(): number {
   const m = location.hash.match(/seed=(\d+)/);
@@ -190,10 +199,29 @@ async function boot(): Promise<void> {
     return batch;
   };
 
+  // fog of war (M7b): explored ground persists in the save; sight is live
+  const fogMask = unpackExplored(save?.explored);
+  const fogMesh = createFog(scene.scene, world);
+  let fogVersion = 0;
+  const refreshFog = () => {
+    if (accumulate(fogMask, computeVisibility(state))) {
+      fogVersion++;
+      fogMesh.update(fogMask);
+    }
+  };
+  refreshFog();
+  const fogQueries = {
+    visibleAt: (x: number, z: number) => isVisibleAt(fogMask, x, z),
+    exploredAt: (x: number, z: number) => isExploredAt(fogMask, x, z),
+    get version() {
+      return fogVersion;
+    },
+  };
+
   const chronicle = createChronicle(chronicleEl);
   if (restoredChronicle.length) chronicle.push(restoredChronicle);
   const toasts = createToasts(toastsEl);
-  const buildMenu = createBuildMenu(buildMenuEl, enqueue);
+  const buildMenu = createBuildMenu(buildMenuEl, enqueue, (building) => input.setPlacement(building));
   const armyPanel = createArmyPanel(armyPanelEl, enqueue, culture);
   const techMenu = createTechMenu(techMenuEl, enqueue, culture);
   const constructed = createConstructed(scene.scene, world);
@@ -216,11 +244,12 @@ async function boot(): Promise<void> {
       const events = advanceTick(state, drain(), streams);
       chronicle.push(events);
       toasts.push(events, state);
+      refreshFog();
       for (const e of events) {
-        if (e.kind === 'dayEnd') recorder.autosave(state.tick);
+        if (e.kind === 'dayEnd') recorder.autosave(state.tick, packExplored(fogMask));
         if (!ended && (e.kind === 'gameWon' || e.kind === 'gameLost')) {
           ended = true;
-          recorder.autosave(state.tick);
+          recorder.autosave(state.tick, packExplored(fogMask));
           showEndScreen(endEl, e.kind === 'gameWon', e.kind === 'gameWon' ? e.how : '');
         }
       }
@@ -230,12 +259,12 @@ async function boot(): Promise<void> {
       buildMenu.update(state);
       armyPanel.update(state);
       techMenu.update(state);
-      constructed.sync(state);
+      constructed.sync(state, fogQueries);
       // prune dead armies out of the selection so rings and orders stay honest
       for (const id of input.selection) {
         if (!state.armies.some((a) => a.id === id && a.ownerRealm === 0)) input.selection.delete(id);
       }
-      armies.sync(state, alpha, input.selection);
+      armies.sync(state, alpha, input.selection, fogQueries);
       if (input.selection.size) selChipEl.textContent = describeSelection(state, input.selection);
       else if (selChipEl.style.display !== 'none') selChipEl.style.display = 'none';
       scene.render();
@@ -248,7 +277,7 @@ async function boot(): Promise<void> {
   );
 
   // debug/verification hook — the sim is still command-driven; this is a window for tests
-  (window as unknown as Record<string, unknown>).__realms = { state, enqueue, scene };
+  (window as unknown as Record<string, unknown>).__realms = { state, enqueue, scene, fog: fogQueries };
 
   window.addEventListener('keydown', (e) => {
     if (e.code === 'Space') {

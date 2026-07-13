@@ -66,12 +66,23 @@ export interface SimSettlement {
   garrison: UnitCounts;
   /** Day the last militia levy was raised — a people musters once a season. */
   lastLevyDay?: number;
+  /** Buildings standing at player-chosen spots (subset of `buildings` counts). */
+  placed: PlacedBuilding[];
 }
 
 export interface ConstructionJob {
   building: BuildingId;
   /** Accumulated build ticks (buildSpeed-modified). */
   progress: number;
+  /** Player-chosen spot (M7b free placement); absent = auto-placed ring. */
+  at?: { x: number; z: number };
+}
+
+/** A completed building standing at a player-chosen spot (M7b). */
+export interface PlacedBuilding {
+  building: BuildingId;
+  x: number;
+  z: number;
 }
 
 export interface TrainingJob {
@@ -276,6 +287,7 @@ export function initGameState(world: WorldData, playerCulture: CultureId = 'vale
       buildings: {},
       trainQueue: [],
       garrison: {},
+      placed: [],
     };
   });
 

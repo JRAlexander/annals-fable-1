@@ -18,6 +18,8 @@ export interface SaveGame {
   culture: CultureId;
   tick: number;
   commands: IssuedCommand[];
+  /** Hex-packed explored fog mask (M7b) — presentation state, optional. */
+  explored?: string;
 }
 
 const KEY_PREFIX = 'realms.save.';
@@ -82,8 +84,8 @@ export function createRecorder(seed: number, culture: CultureId, initial: Issued
     record(cmd: IssuedCommand): void {
       commands.push(cmd);
     },
-    autosave(tick: number): void {
-      writeSave({ v: 1, seed, culture, tick, commands });
+    autosave(tick: number, explored?: string): void {
+      writeSave({ v: 1, seed, culture, tick, commands, explored });
     },
   };
 }

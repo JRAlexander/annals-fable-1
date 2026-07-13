@@ -40,7 +40,13 @@ export interface ArmyPick {
 }
 
 export interface ArmiesHandle {
-  sync(state: GameState, alpha: number, selected?: ReadonlySet<number>): void;
+  sync(
+    state: GameState,
+    alpha: number,
+    selected?: ReadonlySet<number>,
+    /** Fog predicates (M7b): hostile armies need line of sight, tents need exploration. */
+    fog?: { visibleAt(x: number, z: number): boolean; exploredAt(x: number, z: number): boolean },
+  ): void;
   /** The banner cones, raycastable; instanceId maps through `ids`. */
   getPickTargets(): ArmyPick | null;
 }
@@ -74,6 +80,7 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
   tents.instanceMatrix.needsUpdate = true;
   tents.frustumCulled = false; // instance matrices live far from the geometry origin
   scene.add(tents);
+  const tentShown: boolean[] = world.camps.map(() => true);
 
   const coneGeo = new THREE.ConeGeometry(8, 26, 6);
   coneGeo.translate(0, 13, 0);
@@ -89,7 +96,6 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
   let soldierCap = 0;
   let ringCap = 0;
   let pickIds: number[] = [];
-  const clearedShown = new Set<number>();
 
   const ensureCapacity = (needCones: number, needSoldiers: number, needRings: number) => {
     if (!cones || needCones > coneCap) {
@@ -137,14 +143,20 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
     getPickTargets(): ArmyPick | null {
       return cones ? { mesh: cones, ids: pickIds } : null;
     },
-    sync(state, alpha, selected) {
-      // hide cleared camps (once)
+    sync(state, alpha, selected, fog) {
+      // tents show when the ground is explored and the camp still stands
       for (const camp of state.camps) {
-        if (camp.cleared && !clearedShown.has(camp.id)) {
-          clearedShown.add(camp.id);
-          const c = world.camps[camp.id];
-          _v.set(c.x, -100, c.z);
-          _s.set(0.001, 0.001, 0.001);
+        const c = world.camps[camp.id];
+        const want = !camp.cleared && (fog ? fog.exploredAt(c.x, c.z) : true);
+        if (want !== tentShown[camp.id]) {
+          tentShown[camp.id] = want;
+          if (want) {
+            _v.set(c.x, terrainHeight(world.heightmap, c.x, c.z), c.z);
+            _s.set(1.8, 1.4, 1.8);
+          } else {
+            _v.set(c.x, -100, c.z);
+            _s.set(0.001, 0.001, 0.001);
+          }
           _q.identity();
           _m.compose(_v, _q, _s);
           tents.setMatrixAt(camp.id, _m);
@@ -168,6 +180,17 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
         const z = a.prevZ + (a.z - a.prevZ) * alpha;
         const y = terrainHeight(world.heightmap, x, z);
         const isDragon = (a.units.dragon ?? 0) > 0;
+        // hostile armies move unseen beyond the fog (zero-scale keeps pick ids stable)
+        const hidden = fog !== undefined && a.ownerRealm !== 0 && !fog.visibleAt(x, z);
+        if (hidden) {
+          _v.set(x, -100, z);
+          _s.set(0.001, 0.001, 0.001);
+          _q.identity();
+          _m.compose(_v, _q, _s);
+          cones?.setMatrixAt(k, _m);
+          pickIds.push(a.id);
+          return;
+        }
         const sc = isDragon ? 3.2 : 0.8 + Math.sqrt(totalUnits(a.units)) * 0.12;
         _v.set(x, y, z);
         _s.set(sc, sc, sc);

@@ -25,7 +25,7 @@ const SCRIPT: Record<number, IssuedCommand[]> = {
 // Golden hash for seed 1234 @ 2000 ticks with SCRIPT. If a sim change is
 // INTENTIONAL, update this value; if you didn't mean to change sim behavior,
 // this failing means you did.
-const GOLDEN_HASH_1234 = '07ebbe85';
+const GOLDEN_HASH_1234 = 'ac338150';
 
 describe('sim determinism', () => {
   it('same seed + same command log → identical state hash after 2000 ticks', () => {

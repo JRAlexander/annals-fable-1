@@ -6,7 +6,7 @@ import { TECHS } from '../content/techs';
 import { WILD_REALM } from '../content/threats';
 import { UNITS } from '../content/units';
 import { hidx, worldToCell } from '../worldgen/coords';
-import { GRID } from '../worldgen/types';
+import { GRID, WORLD_SIZE } from '../worldgen/types';
 import type { SimEvent } from './events';
 import type { GameState, Realm, RealmId } from './state';
 import { routePath } from './systems/armies';
@@ -90,6 +90,42 @@ function realmHasBuilding(state: GameState, r: Realm, building: BuildingId): boo
   return state.settlements.some((s) => s.ownerRealm === r.id && (s.buildings[building] ?? 0) > 0);
 }
 
+/** Shared age/tech/uniqueness/cost gates for constructing `def`. True = clear to pay. */
+function buildingGates(
+  state: GameState,
+  realm: RealmId,
+  def: (typeof BUILDINGS)[string],
+  out: SimEvent[],
+): boolean {
+  const r = state.realms[realm];
+  if (ageIndex(def.requiresAge) > ageIndex(r.age)) {
+    reject(out, realm, `${def.name} requires ${AGES[def.requiresAge].name}`);
+    return false;
+  }
+  const missingTech = (def.requiresTechs ?? []).find((t) => !r.researchedTechs.includes(t));
+  if (missingTech) {
+    reject(out, realm, `${def.name} requires the ${TECHS[missingTech]?.name ?? missingTech} technology`);
+    return false;
+  }
+  if (def.id === 'wonder') {
+    const hasOne = state.settlements.some(
+      (x) =>
+        x.ownerRealm === realm &&
+        ((x.buildings.wonder ?? 0) > 0 || x.buildQueue.some((j) => j.building === 'wonder')),
+    );
+    if (hasOne) {
+      reject(out, realm, 'a realm raises only one Wonder');
+      return false;
+    }
+  }
+  const short = shortOf(r, def.cost);
+  if (short) {
+    reject(out, realm, `cannot afford ${def.name}: needs ${short[1]} ${short[0]}`);
+    return false;
+  }
+  return true;
+}
+
 /** Validate and apply this tick's commands. Invalid commands leave state untouched. */
 export function applyCommands(state: GameState, issued: IssuedCommand[], out: SimEvent[]): void {
   const ordered = [...issued].sort((a, b) => a.realm - b.realm || a.seq - b.seq);
@@ -134,38 +170,77 @@ export function applyCommands(state: GameState, issued: IssuedCommand[], out: Si
           reject(out, realm, `unknown building '${cmd.building}'`);
           break;
         }
-        const r = state.realms[realm];
-        if (ageIndex(def.requiresAge) > ageIndex(r.age)) {
-          reject(out, realm, `${def.name} requires ${AGES[def.requiresAge].name}`);
+        if (!buildingGates(state, realm, def, out)) break;
+        pay(state.realms[realm], def.cost);
+        s.buildQueue.push({ building: def.id, progress: 0 });
+        out.push({ kind: 'buildingQueued', settlement: s.id, building: def.id });
+        break;
+      }
+      case 'placeBuilding': {
+        const def = BUILDINGS[cmd.building];
+        if (!def) {
+          reject(out, realm, `unknown building '${cmd.building}'`);
           break;
         }
-        const missingTech = (def.requiresTechs ?? []).find((t) => !r.researchedTechs.includes(t));
-        if (missingTech) {
-          reject(
-            out,
-            realm,
-            `${def.name} requires the ${TECHS[missingTech]?.name ?? missingTech} technology`,
-          );
+        const { x, z } = cmd.at;
+        if (!Number.isFinite(x) || !Number.isFinite(z)) {
+          reject(out, realm, 'no such place');
           break;
         }
-        if (def.id === 'wonder') {
-          const hasOne = state.settlements.some(
-            (x) =>
-              x.ownerRealm === realm &&
-              ((x.buildings.wonder ?? 0) > 0 || x.buildQueue.some((j) => j.building === 'wonder')),
-          );
-          if (hasOne) {
-            reject(out, realm, 'a realm raises only one Wonder');
-            break;
+        const [ci, cj] = nearestCell(x, z);
+        if (!Number.isFinite(state.world.navCost[hidx(ci, cj)])) {
+          reject(out, realm, 'nothing can be built on the water');
+          break;
+        }
+        // the nearest OWNED settlement whose influence covers the spot
+        let s: (typeof state.settlements)[number] | undefined;
+        let bestD = Number.POSITIVE_INFINITY;
+        for (const cand of state.settlements) {
+          if (cand.ownerRealm !== realm) continue;
+          const site = state.world.settlements[cand.id];
+          const d = Math.hypot(site.x - x, site.z - z);
+          if (d < bestD && d <= site.radius * 2.5) {
+            bestD = d;
+            s = cand;
           }
         }
-        const short = shortOf(r, def.cost);
-        if (short) {
-          reject(out, realm, `cannot afford ${def.name}: needs ${short[1]} ${short[0]}`);
+        if (!s) {
+          reject(out, realm, 'too far from any settlement of the realm');
           break;
         }
-        pay(r, def.cost);
-        s.buildQueue.push({ building: def.id, progress: 0 });
+        const core = state.world.settlements[s.id];
+        if (Math.hypot(core.x - x, core.z - z) < core.radius * 0.9) {
+          reject(out, realm, 'the town core is already built up');
+          break;
+        }
+        // footprint overlap against existing placed buildings and queued spots
+        const cellW = WORLD_SIZE / (GRID - 1);
+        const half = (fp: { w: number; d: number }) => (Math.max(fp.w, fp.d) * cellW) / 4;
+        const tooClose = state.settlements.some((other) => {
+          if (other.ownerRealm !== realm) return false;
+          const queuedSpots = other.buildQueue
+            .filter((j) => j.at)
+            .map((j) => ({
+              x: (j.at as { x: number; z: number }).x,
+              z: (j.at as { x: number; z: number }).z,
+              fp: BUILDINGS[j.building]?.footprint ?? { w: 1, d: 1 },
+            }));
+          const placedSpots = other.placed.map((pb) => ({
+            x: pb.x,
+            z: pb.z,
+            fp: BUILDINGS[pb.building]?.footprint ?? { w: 1, d: 1 },
+          }));
+          return [...placedSpots, ...queuedSpots].some(
+            (pb) => Math.hypot(pb.x - x, pb.z - z) < half(pb.fp) + half(def.footprint),
+          );
+        });
+        if (tooClose) {
+          reject(out, realm, 'the ground there is already taken');
+          break;
+        }
+        if (!buildingGates(state, realm, def, out)) break;
+        pay(state.realms[realm], def.cost);
+        s.buildQueue.push({ building: def.id, progress: 0, at: { x, z } });
         out.push({ kind: 'buildingQueued', settlement: s.id, building: def.id });
         break;
       }
