@@ -1,5 +1,12 @@
+import { makeStreams } from '../core/rng';
 import { createScene } from '../render/scene';
+import type { Command, IssuedCommand } from '../sim/commands';
+import { initGameState } from '../sim/state';
+import { advanceTick } from '../sim/tick';
+import { createChronicle } from '../ui/chronicle';
+import { createHud } from '../ui/hud';
 import { generateWorld } from '../worldgen/world';
+import { SPEEDS, type Speed, startLoop } from './loop';
 
 function seedFromHash(): number {
   const m = location.hash.match(/seed=(\d+)/);
@@ -11,24 +18,49 @@ function seedFromHash(): number {
 
 function boot(): void {
   const canvas = document.getElementById('view') as HTMLCanvasElement;
-  const hud = document.getElementById('hud')!;
+  const hudEl = document.getElementById('hud')!;
+  const chronicleEl = document.getElementById('chronicle')!;
   const loading = document.getElementById('loading')!;
 
   const seed = seedFromHash();
   const world = generateWorld(seed);
-  createScene(world, canvas);
+  const { history: historyRng, combat, ai } = makeStreams(seed);
+  const streams = { history: historyRng, combat, ai };
+  const state = initGameState(world);
+  const scene = createScene(world, canvas);
   loading.style.display = 'none';
 
-  const cap = world.capital;
-  hud.innerHTML = `
-    <span class="title">REALMS</span>
-    <span>seed <b>${seed}</b></span>
-    <span>capital <b>${cap.name}</b></span>
-    <span>${world.settlements.length} settlements</span>
-    <button id="reforge">new world</button>
-  `;
-  document.getElementById('reforge')!.addEventListener('click', () => {
-    location.hash = `seed=${Math.floor(Math.random() * 100000)}`;
+  // the command queue — the ONLY path from input to sim state (save = seed + this log)
+  let seq = 0;
+  let pending: IssuedCommand[] = [];
+  const enqueue = (cmd: Command) => {
+    pending.push({ tick: state.tick, realm: 0, seq: seq++, cmd });
+  };
+  const drain = () => {
+    const batch = pending;
+    pending = [];
+    return batch;
+  };
+  // M2's build menu and allocation sliders call enqueue(); nothing does yet in M1
+  void enqueue;
+
+  const chronicle = createChronicle(chronicleEl);
+  const loop = startLoop({
+    simTick: () => chronicle.push(advanceTick(state, drain(), streams)),
+    onFrame: () => {
+      hud.update(state, loop.getSpeed());
+      scene.render();
+    },
+  });
+  const hud = createHud(hudEl, (s) => loop.setSpeed(s));
+
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space') {
+      e.preventDefault();
+      loop.setSpeed(loop.getSpeed() === 0 ? 5 : 0);
+    }
+    const idx = ['Digit1', 'Digit2', 'Digit3'].indexOf(e.code);
+    if (idx >= 0) loop.setSpeed(SPEEDS[idx + 1] as Speed);
   });
 }
 

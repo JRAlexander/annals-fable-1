@@ -14,6 +14,8 @@ export interface SceneHandle {
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
   controls: OrbitControls;
+  /** Draw one frame. The app loop owns frame timing, not the renderer. */
+  render: () => void;
   dispose: () => void;
 }
 
@@ -60,18 +62,16 @@ export function createScene(world: WorldData, canvas: HTMLCanvasElement): SceneH
   };
   window.addEventListener('resize', onResize);
 
-  renderer.setAnimationLoop(() => {
-    controls.update();
-    renderer.render(scene, camera);
-  });
-
   return {
     renderer,
     scene,
     camera,
     controls,
+    render: () => {
+      controls.update();
+      renderer.render(scene, camera);
+    },
     dispose: () => {
-      renderer.setAnimationLoop(null);
       window.removeEventListener('resize', onResize);
       renderer.dispose();
     },
