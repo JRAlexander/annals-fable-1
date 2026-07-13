@@ -9,13 +9,18 @@ import {
   WORK_RATIO,
   type WorkJob,
 } from '../content/economy';
-import type { BuildingId, ResourceId } from '../content/schema';
+import type { AgeId, BuildingId, ResourceId, TechId } from '../content/schema';
 import { clamp } from '../core/math';
 import { hidx } from '../worldgen/coords';
 import type { WorldData } from '../worldgen/types';
 import { Biome, GRID, WORLD_SIZE } from '../worldgen/types';
 
 export type RealmId = number;
+
+/** The one thing a realm researches at a time: a tech, or the age advance itself. */
+export type ResearchJob =
+  | { kind: 'tech'; tech: TechId; progress: number }
+  | { kind: 'age'; progress: number }; // target is always the next age
 
 export interface Realm {
   id: RealmId; // player = 0; rival realms arrive in M5
@@ -24,6 +29,10 @@ export interface Realm {
   culture: string | null; // set at culture select (M5)
   stock: Record<ResourceId, number>; // shared AoE-style stockpile
   storageCap: Record<ResourceId, number>; // derived cache, recomputed by the storage system
+  age: AgeId;
+  /** Completion order — deterministic push order matters for the hash. */
+  researchedTechs: TechId[];
+  research: ResearchJob | null;
 }
 
 export interface SimSettlement {
@@ -110,6 +119,9 @@ export function initGameState(world: WorldData): GameState {
     culture: null,
     stock: { ...STARTING_STOCK },
     storageCap: { food: 0, wood: 0, stone: 0, gold: 0 }, // filled by the storage system on tick 0
+    age: 'founding',
+    researchedTechs: [],
+    research: null,
   };
 
   const settlements = world.settlements.map((site, idx): SimSettlement => {

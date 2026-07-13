@@ -67,8 +67,12 @@ export interface AgeDef {
   id: AgeId;
   name: string;
   index: number;
+  /** Cost to ENTER this age, paid when the advance starts. */
   advanceCost: Cost;
+  /** Distinct completed building types required from the PREVIOUS age. */
   requires: { buildingsFromCurrentAge: number };
+  /** Ticks the advance occupies the realm's research slot. */
+  advanceTime: number;
 }
 
 export interface TechDef {
@@ -102,6 +106,8 @@ export interface BuildingDef {
   requiresAge: AgeId;
   requiresTechs?: TechId[];
   functions: BuildingFunction[];
+  /** Passive effects from PRESENCE — applied once per building type per scope, not per instance. */
+  effects?: Modifier[];
   /** Needed the moment RTS free placement lands (M7+). */
   footprint: { w: number; d: number };
 }

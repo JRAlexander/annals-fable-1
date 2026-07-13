@@ -1,4 +1,6 @@
+import { AGES } from '../content/ages';
 import { BUILDINGS } from '../content/buildings';
+import { TECHS } from '../content/techs';
 import type { SimEvent } from '../sim/events';
 
 const TOAST_MS = 4000;
@@ -22,6 +24,12 @@ export function createToasts(el: HTMLElement): Toasts {
         if (e.kind === 'commandRejected') show(e.reason, 'bad');
         if (e.kind === 'buildingCompleted') {
           show(`${BUILDINGS[e.building]?.name ?? e.building} completed`, 'good');
+        }
+        if (e.kind === 'researchCompleted') {
+          show(`${TECHS[e.tech]?.name ?? e.tech} researched`, 'good');
+        }
+        if (e.kind === 'ageAdvanced') {
+          show(`The realm enters ${AGES[e.age].name}!`, 'good');
         }
       }
     },

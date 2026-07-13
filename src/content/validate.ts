@@ -1,0 +1,96 @@
+import { AGE_ORDER, AGES, ageIndex } from './ages';
+import { BUILDINGS } from './buildings';
+import type { Cost, ResourceId } from './schema';
+import { TECHS } from './techs';
+
+const RESOURCES: readonly ResourceId[] = ['food', 'wood', 'stone', 'gold'];
+
+function badCost(cost: Cost, where: string, out: string[]): void {
+  for (const [res, amt] of Object.entries(cost)) {
+    if (!RESOURCES.includes(res as ResourceId)) out.push(`${where}: unknown resource '${res}'`);
+    if (!Number.isFinite(amt) || (amt as number) < 0) out.push(`${where}: invalid amount for ${res}`);
+  }
+}
+
+/**
+ * Content integrity checks, run in CI (tests/content.test.ts). Returns a list
+ * of human-readable errors; empty means the content is consistent. Guards the
+ * data-not-code contract: dangling ids and cycles fail the build, not the game.
+ */
+export function validateContent(): string[] {
+  const errors: string[] = [];
+
+  // ages: contiguous indices in declared order
+  AGE_ORDER.forEach((id, i) => {
+    if (AGES[id].index !== i) errors.push(`age ${id}: index ${AGES[id].index} !== position ${i}`);
+    badCost(AGES[id].advanceCost, `age ${id}`, errors);
+  });
+
+  for (const [key, def] of Object.entries(BUILDINGS)) {
+    if (def.id !== key) errors.push(`building ${key}: id '${def.id}' mismatch`);
+    badCost(def.cost, `building ${key}`, errors);
+    for (const t of def.requiresTechs ?? []) {
+      const tech = TECHS[t];
+      if (!tech) errors.push(`building ${key}: requiresTechs '${t}' does not exist`);
+      else if (ageIndex(tech.age) > ageIndex(def.requiresAge))
+        errors.push(`building ${key}: gated on tech '${t}' from a later age than the building`);
+    }
+    for (const m of def.effects ?? []) {
+      if (m.op === 'mul' && (!Number.isFinite(m.value) || m.value <= 0))
+        errors.push(`building ${key}: mul modifier must be finite and > 0`);
+    }
+  }
+
+  for (const [key, def] of Object.entries(TECHS)) {
+    if (def.id !== key) errors.push(`tech ${key}: id '${def.id}' mismatch`);
+    badCost(def.cost, `tech ${key}`, errors);
+    const at = BUILDINGS[def.researchedAt];
+    if (!at) errors.push(`tech ${key}: researchedAt '${def.researchedAt}' does not exist`);
+    else if (ageIndex(at.requiresAge) > ageIndex(def.age))
+      errors.push(`tech ${key}: researchedAt building arrives after the tech's age`);
+    for (const p of def.prereqs) {
+      const pre = TECHS[p];
+      if (!pre) errors.push(`tech ${key}: prereq '${p}' does not exist`);
+      else if (ageIndex(pre.age) > ageIndex(def.age))
+        errors.push(`tech ${key}: prereq '${p}' is from a later age`);
+    }
+    for (const b of def.unlocks?.buildings ?? []) {
+      const building = BUILDINGS[b];
+      if (!building) errors.push(`tech ${key}: unlocks building '${b}' which does not exist`);
+      else if (!(building.requiresTechs ?? []).includes(key))
+        errors.push(`tech ${key}: unlocks '${b}' but that building does not require it`);
+    }
+    if (def.unlocks?.units?.length) errors.push(`tech ${key}: unit unlocks are not available until M4`);
+    for (const m of def.effects) {
+      if (m.op === 'mul' && (!Number.isFinite(m.value) || m.value <= 0))
+        errors.push(`tech ${key}: mul modifier must be finite and > 0`);
+    }
+  }
+
+  // prereq cycles (DFS)
+  const state = new Map<string, 'visiting' | 'done'>();
+  const visit = (id: string, path: string[]): void => {
+    if (state.get(id) === 'done') return;
+    if (state.get(id) === 'visiting') {
+      errors.push(`tech prereq cycle: ${[...path, id].join(' → ')}`);
+      return;
+    }
+    state.set(id, 'visiting');
+    for (const p of TECHS[id]?.prereqs ?? []) visit(p, [...path, id]);
+    state.set(id, 'done');
+  };
+  for (const id of Object.keys(TECHS)) visit(id, []);
+
+  // every advancement is satisfiable: each non-terminal age offers enough building types
+  for (let i = 0; i < AGE_ORDER.length - 1; i++) {
+    const age = AGE_ORDER[i];
+    const next = AGES[AGE_ORDER[i + 1]];
+    const types = Object.values(BUILDINGS).filter((b) => b.requiresAge === age).length;
+    if (types < next.requires.buildingsFromCurrentAge)
+      errors.push(
+        `age ${age}: only ${types} building types but advancing needs ${next.requires.buildingsFromCurrentAge}`,
+      );
+  }
+
+  return errors;
+}

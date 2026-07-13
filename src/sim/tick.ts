@@ -6,6 +6,7 @@ import type { GameState } from './state';
 import { constructionSystem } from './systems/construction';
 import { populationSystem } from './systems/population';
 import { productionSystem } from './systems/production';
+import { researchSystem } from './systems/research';
 import { storageSystem } from './systems/storage';
 import { dateOf, isDayEnd } from './time';
 
@@ -23,6 +24,7 @@ export function advanceTick(state: GameState, issued: IssuedCommand[], streams: 
 
   applyCommands(state, issued, events);
   constructionSystem(state, events);
+  researchSystem(state, events);
   productionSystem(state, events);
   if (isDayEnd(state.tick)) {
     populationSystem(state, events);

@@ -1,7 +1,10 @@
 import type { Speed } from '../app/loop';
-import type { ResourceId } from '../content/schema';
+import { AGES } from '../content/ages';
+import type { AgeId, ResourceId } from '../content/schema';
 import type { GameState } from '../sim/state';
 import { DAYS_PER_YEAR, dateOf, TICKS_PER_DAY } from '../sim/time';
+
+const AGE_GLYPH: Record<AgeId, string> = { founding: '🌱', flowering: '🌸', highKingdom: '🏰', golden: '👑' };
 
 const RESOURCES: { id: ResourceId; glyph: string }[] = [
   { id: 'food', glyph: '🌾' },
@@ -21,11 +24,12 @@ export interface Hud {
   update(state: GameState, speed: Speed): void;
 }
 
-export function createHud(el: HTMLElement, onSpeed: (s: Speed) => void): Hud {
+export function createHud(el: HTMLElement, onSpeed: (s: Speed) => void, onTechToggle: () => void): Hud {
   el.innerHTML = `
     <span class="title">REALMS</span>
     <span id="hud-res"></span>
     <span id="hud-pop"></span>
+    <span id="hud-age"></span>
     <span id="hud-date"></span>
     <span id="hud-speed"></span>
   `;
@@ -46,7 +50,13 @@ export function createHud(el: HTMLElement, onSpeed: (s: Speed) => void): Hud {
     });
   }
 
+  const ageEl = el.querySelector('#hud-age') as HTMLElement;
+
   const buttons = new Map<Speed, HTMLButtonElement>();
+  const techBtn = document.createElement('button');
+  techBtn.textContent = '⚗ Tech';
+  techBtn.addEventListener('click', onTechToggle);
+  speedEl.appendChild(techBtn);
   for (const { speed, label } of SPEED_BUTTONS) {
     const b = document.createElement('button');
     b.textContent = label;
@@ -89,6 +99,8 @@ export function createHud(el: HTMLElement, onSpeed: (s: Speed) => void): Hud {
 
       const pop = state.settlements.reduce((t, s) => t + s.pop, 0);
       setText(popEl, `👥 ${Math.floor(pop)}`);
+      const age = state.realms[0].age;
+      setText(ageEl, `${AGE_GLYPH[age]} ${AGES[age].name}`);
       const d = dateOf(state.tick);
       setText(dateEl, `Year ${d.year} · Day ${((d.day % DAYS_PER_YEAR) + 1).toString()}`);
 
