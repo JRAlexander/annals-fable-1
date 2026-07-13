@@ -26,5 +26,11 @@ export type SimEvent =
   | { kind: 'armyRouted'; army: number; camp: number }
   | { kind: 'armyReturned'; army: number; settlement: number }
   | { kind: 'armyDestroyed'; army: number; realm: RealmId }
+  | { kind: 'warDeclared'; realm: RealmId; target: RealmId }
+  | { kind: 'armyMarchedOnSettlement'; army: number; settlement: number }
+  | { kind: 'siegeStarted'; army: number; settlement: number }
+  | { kind: 'levyRaised'; settlement: number; count: number }
+  | { kind: 'settlementCaptured'; settlement: number; by: RealmId; from: RealmId }
+  | { kind: 'siegeRepelled'; army: number; settlement: number }
   | { kind: 'commandRejected'; realm: RealmId; reason: string }
   | { kind: 'chronicle'; tick: number; text: string; tone: 'neutral' | 'good' | 'grim' };

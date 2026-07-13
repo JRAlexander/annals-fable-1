@@ -48,7 +48,7 @@ export function createBuildMenu(el: HTMLElement, enqueue: (cmd: Command) => void
   const queueEl = el.querySelector('#bm-queue') as HTMLElement;
   const allocEl = el.querySelector('#bm-alloc') as HTMLElement;
 
-  let selected = 0;
+  let selected = -1;
   select.addEventListener('change', () => {
     selected = Number(select.value);
     syncSliders = true;
@@ -88,23 +88,32 @@ export function createBuildMenu(el: HTMLElement, enqueue: (cmd: Command) => void
     sliders.set(job, { input, cap: row.querySelector('.cap') as HTMLElement });
   }
 
-  let optionsBuilt = false;
+  let lastOwnSig = '';
   let lastQueueSig = '';
 
   return {
     update(state) {
-      if (!optionsBuilt) {
-        for (const s of state.settlements) {
-          const site = state.world.settlements[s.id];
+      // only OUR settlements are governable; the roster shifts with captures
+      const mine = state.settlements.filter((x) => x.ownerRealm === 0);
+      const ownSig = mine.map((x) => x.id).join(',');
+      if (ownSig !== lastOwnSig) {
+        lastOwnSig = ownSig;
+        select.innerHTML = '';
+        for (const x of mine) {
+          const site = state.world.settlements[x.id];
           const opt = document.createElement('option');
-          opt.value = String(s.id);
+          opt.value = String(x.id);
           opt.textContent = `${site.name} (${site.tier})`;
           select.appendChild(opt);
         }
-        optionsBuilt = true;
+        if (!mine.some((x) => x.id === selected)) {
+          selected = mine[0]?.id ?? -1;
+          syncSliders = true;
+        }
+        select.value = String(selected);
       }
 
-      const s = state.settlements[selected];
+      const s = state.settlements.find((x) => x.id === selected && x.ownerRealm === 0);
       if (!s) return;
       const realm = state.realms[0];
       popEl.textContent = `👥 ${Math.floor(s.pop)}/${Math.round(s.popCap)}`;

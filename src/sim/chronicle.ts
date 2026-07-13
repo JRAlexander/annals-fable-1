@@ -63,8 +63,9 @@ export function narrate(state: GameState, events: SimEvent[], rng: Rng): void {
         );
         break;
       case 'storageFull':
-        // a gentle periodic reminder, not a daily drumbeat (the event itself stays daily)
-        if (dateOf(state.tick).dayOfYear % 30 === 1) {
+        // a gentle periodic reminder, not a daily drumbeat (the event itself stays
+        // daily) — and only for OUR stores; rival realms waste in silence
+        if (e.realm === 0 && dateOf(state.tick).dayOfYear % 30 === 1) {
           say(`The stores of the realm overflow with ${e.resource}; the surplus goes to waste.`);
         }
         break;
@@ -104,6 +105,27 @@ export function narrate(state: GameState, events: SimEvent[], rng: Rng): void {
         break;
       case 'armyReturned':
         say(`The banners come home to ${nameOf(e.settlement)}.`);
+        break;
+      case 'warDeclared':
+        say(
+          `Let all men know: ${state.realms[e.realm].name} has declared war upon ${state.realms[e.target].name}.`,
+          'grim',
+        );
+        break;
+      case 'siegeStarted':
+        say(`A hostile host stands before the gates of ${nameOf(e.settlement)}.`, 'grim');
+        break;
+      case 'levyRaised':
+        say(`${nameOf(e.settlement)} calls ${e.count} of its folk to the walls.`);
+        break;
+      case 'settlementCaptured':
+        say(
+          `${nameOf(e.settlement)} has fallen to ${state.realms[e.by].name}; its people bow to a new banner.`,
+          'grim',
+        );
+        break;
+      case 'siegeRepelled':
+        say(`The walls of ${nameOf(e.settlement)} held; the besiegers lie broken before them.`, 'good');
         break;
       case 'dayEnd': {
         const d = dateOf(state.tick);

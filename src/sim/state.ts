@@ -1,3 +1,4 @@
+import { CULTURE_IDS } from '../content/cultures';
 import {
   HOUSING_BASE,
   SLOTS_PER_CELL,
@@ -9,7 +10,7 @@ import {
   WORK_RATIO,
   type WorkJob,
 } from '../content/economy';
-import type { AgeId, BuildingId, ResourceId, TechId, UnitId } from '../content/schema';
+import type { AgeId, BuildingId, CultureId, ResourceId, TechId, UnitId } from '../content/schema';
 import { clamp } from '../core/math';
 import { hidx } from '../worldgen/coords';
 import type { WorldData } from '../worldgen/types';
@@ -34,6 +35,7 @@ export interface Realm {
   /** Completion order — deterministic push order matters for the hash. */
   researchedTechs: TechId[];
   research: ResearchJob | null;
+  atWarWith: RealmId[];
 }
 
 export interface SimSettlement {
@@ -103,6 +105,8 @@ export interface Army {
   phase: 'idle' | 'marching' | 'fighting' | 'returning';
   /** Strength when the current battle began — the rout threshold reference. */
   battleStartStrength: number;
+  /** Accumulated damage to the besieged settlement's fortifications. */
+  siegeDamage?: number;
 }
 
 /** Live bandit camp state (site geography lives in WorldData.camps). */
@@ -164,21 +168,72 @@ function scanSiteCapacity(world: WorldData, siteIdx: number): Record<WorkJob, nu
 }
 
 /**
- * Fully derived from WorldData — draws NO rng, so `initGameState(world)` is
- * reproducible from the seed alone.
+ * Realm seats: the player holds the capital; the two rival seats are the
+ * settlements that maximize (distance to capital + distance to each other).
+ * Every settlement joins its nearest seat. Pure geometry — no rng.
  */
-export function initGameState(world: WorldData): GameState {
-  const realm: Realm = {
-    id: 0,
-    name: `The Realm of ${world.capital.name}`,
-    isPlayer: true,
-    culture: null,
+function partitionSettlements(world: WorldData): number[] {
+  const cap = world.capital;
+  const dist = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.hypot(a.x - b.x, a.z - b.z);
+  const others = world.settlements.filter((s) => s.id !== cap.id);
+  let bestA = others[0];
+  let bestB = others[1] ?? others[0];
+  let bestScore = -1;
+  for (const a of others) {
+    for (const b of others) {
+      if (a.id >= b.id) continue;
+      const score = dist(a, cap) + dist(b, cap) + dist(a, b);
+      if (score > bestScore) {
+        bestScore = score;
+        bestA = a;
+        bestB = b;
+      }
+    }
+  }
+  const seats = [cap, bestA, bestB];
+  return world.settlements.map((s) => {
+    let owner = 0;
+    let best = Number.POSITIVE_INFINITY;
+    seats.forEach((seat, r) => {
+      const d = dist(s, seat);
+      if (d < best) {
+        best = d;
+        owner = r;
+      }
+    });
+    return owner;
+  });
+}
+
+/**
+ * Fully derived from WorldData — draws NO rng, so `initGameState(world)` is
+ * reproducible from the seed alone. Three realms: the player plus two AI
+ * rivals holding the remaining cultures in fixed order.
+ */
+export function initGameState(world: WorldData, playerCulture: CultureId = 'valen'): GameState {
+  const owners = world.settlements.length >= 3 ? partitionSettlements(world) : world.settlements.map(() => 0);
+  const rivalCultures = CULTURE_IDS.filter((c) => c !== playerCulture);
+  const seatName = (realmId: number): string => {
+    const seat = world.settlements.find((s, i) => owners[i] === realmId);
+    return seat?.name ?? world.capital.name;
+  };
+  const mkRealm = (id: number, isPlayer: boolean, culture: CultureId): Realm => ({
+    id,
+    name: `The Realm of ${isPlayer ? world.capital.name : seatName(id)}`,
+    isPlayer,
+    culture,
     stock: { ...STARTING_STOCK },
     storageCap: { food: 0, wood: 0, stone: 0, gold: 0 }, // filled by the storage system on tick 0
     age: 'founding',
     researchedTechs: [],
     research: null,
-  };
+    atWarWith: [],
+  });
+  const realms = [
+    mkRealm(0, true, playerCulture),
+    mkRealm(1, false, rivalCultures[0]),
+    mkRealm(2, false, rivalCultures[1]),
+  ];
 
   const settlements = world.settlements.map((site, idx): SimSettlement => {
     const siteCapacity = scanSiteCapacity(world, idx);
@@ -188,7 +243,7 @@ export function initGameState(world: WorldData): GameState {
     for (const job of WORK_JOBS) alloc[job] = siteCapacity[job] / total;
     return {
       id: site.id,
-      ownerRealm: 0,
+      ownerRealm: owners[idx] ?? 0,
       pop: site.pop,
       popCap: HOUSING_BASE[site.tier],
       workRatio: WORK_RATIO,
@@ -219,5 +274,5 @@ export function initGameState(world: WorldData): GameState {
     };
   });
 
-  return { seed: world.seed, tick: 0, realms: [realm], settlements, armies: [], nextArmyId: 0, camps, world };
+  return { seed: world.seed, tick: 0, realms, settlements, armies: [], nextArmyId: 0, camps, world };
 }

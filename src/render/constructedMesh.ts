@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { CULTURES } from '../content/cultures';
 import type { BuildingId } from '../content/schema';
 import type { GameState } from '../sim/state';
 import { terrainHeight } from '../worldgen/coords';
@@ -30,7 +31,22 @@ const GOLDEN_ANGLE = 2.399963;
  */
 export function createConstructed(scene: THREE.Scene, world: WorldData): { sync(state: GameState): void } {
   let group: THREE.Group | null = null;
-  let lastCount = -1;
+  let lastSig = '';
+
+  /** Instance tint: the owner culture's trim, softened toward white so vertex colors survive. */
+  const tintOf = new Map<string, THREE.Color>();
+  function cultureTint(culture: string | null): THREE.Color {
+    const key = culture ?? '';
+    let c = tintOf.get(key);
+    if (!c) {
+      c = new THREE.Color(CULTURES[key]?.architecture.palette.trim ?? 0xffffff).lerp(
+        new THREE.Color(0xffffff),
+        0.45,
+      );
+      tintOf.set(key, c);
+    }
+    return c;
+  }
 
   function placement(siteIdx: number, k: number): { x: number; z: number; y: number; rot: number } {
     const site = world.settlements[siteIdx];
@@ -49,19 +65,25 @@ export function createConstructed(scene: THREE.Scene, world: WorldData): { sync(
 
   return {
     sync(state) {
+      // rebuild when construction OR ownership changes (a capture recolors a town)
       let count = 0;
       for (const s of state.settlements) {
         for (const n of Object.values(s.buildings)) count += n ?? 0;
       }
-      if (count === lastCount) return;
-      lastCount = count;
+      const sig = `${count}|${state.settlements.map((s) => s.ownerRealm).join(',')}`;
+      if (sig === lastSig) return;
+      lastSig = sig;
 
       if (group) scene.remove(group);
       group = new THREE.Group();
       group.name = 'constructed';
 
-      const byArch = new Map<DecorArch, { x: number; z: number; y: number; rot: number }[]>();
+      const byArch = new Map<
+        DecorArch,
+        { x: number; z: number; y: number; rot: number; tint: THREE.Color }[]
+      >();
       for (const s of state.settlements) {
+        const tint = cultureTint(state.realms[s.ownerRealm]?.culture ?? null);
         let k = 0;
         // stable id order keeps existing buildings in place as new ones appear
         for (const id of Object.keys(BUILDING_ARCH) as BuildingId[]) {
@@ -69,7 +91,7 @@ export function createConstructed(scene: THREE.Scene, world: WorldData): { sync(
           for (let i = 0; i < n; i++) {
             const arch = BUILDING_ARCH[id];
             const list = byArch.get(arch) ?? [];
-            list.push(placement(s.id, k++));
+            list.push({ ...placement(s.id, k++), tint });
             byArch.set(arch, list);
           }
         }
@@ -92,8 +114,10 @@ export function createConstructed(scene: THREE.Scene, world: WorldData): { sync(
           _q.setFromEuler(_e);
           _m.compose(_v, _q, _s);
           im.setMatrixAt(i, _m);
+          im.setColorAt(i, p.tint);
         });
         im.instanceMatrix.needsUpdate = true;
+        if (im.instanceColor) im.instanceColor.needsUpdate = true;
         group.add(im);
       }
       scene.add(group);

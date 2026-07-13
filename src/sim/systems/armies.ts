@@ -96,6 +96,24 @@ export function armiesSystem(state: GameState, out: SimEvent[], streams: SimStre
               army.battleStartStrength = totalUnits(army.units);
               out.push({ kind: 'battleStarted', army: army.id, camp: camp.id });
             }
+          } else if (army.objective.kind === 'attackSettlement') {
+            const target = state.settlements[army.objective.settlement];
+            if (!target || target.ownerRealm === army.ownerRealm) {
+              // captured by someone else mid-march (or already ours) — go home
+              army.objective = { kind: 'returnHome' };
+              army.phase = 'returning';
+              const home = state.world.settlements[army.home];
+              routePath(state, army, home.i, home.j);
+            } else {
+              army.phase = 'fighting';
+              army.battleStartStrength = totalUnits(army.units);
+              // the town raises a one-time levy of militia from its people
+              const levy = Math.max(5, Math.floor(target.pop * 0.01));
+              target.pop = Math.max(0, target.pop - levy);
+              target.garrison.militia = (target.garrison.militia ?? 0) + levy;
+              out.push({ kind: 'levyRaised', settlement: target.id, count: levy });
+              out.push({ kind: 'siegeStarted', army: army.id, settlement: target.id });
+            }
           }
         }
         survivors.push(army);
@@ -103,6 +121,10 @@ export function armiesSystem(state: GameState, out: SimEvent[], streams: SimStre
       }
 
       case 'fighting': {
+        if (army.objective?.kind === 'attackSettlement') {
+          fightSettlement(state, army, out, streams, survivors);
+          break;
+        }
         const campId = army.objective?.kind === 'attackCamp' ? army.objective.camp : -1;
         const camp = state.camps[campId];
         if (!camp || camp.cleared) {
@@ -157,4 +179,59 @@ export function armiesSystem(state: GameState, out: SimEvent[], streams: SimStre
     }
   }
   state.armies = survivors;
+}
+
+/** Siege of an enemy settlement: garrison (with its one-time levy) behind walls/keep. */
+function fightSettlement(
+  state: GameState,
+  army: Army,
+  out: SimEvent[],
+  streams: SimStreams,
+  survivors: Army[],
+): void {
+  const targetId = army.objective?.kind === 'attackSettlement' ? army.objective.settlement : -1;
+  const target = state.settlements[targetId];
+  const goHome = () => {
+    army.phase = 'returning';
+    army.objective = { kind: 'returnHome' };
+    const home = state.world.settlements[army.home];
+    routePath(state, army, home.i, home.j);
+    survivors.push(army);
+  };
+  if (!target || target.ownerRealm === army.ownerRealm) {
+    goHome();
+    return;
+  }
+  const site = state.world.settlements[target.id];
+  const fortHp = site.walls * 200 + (target.buildings.keep ?? 0) * 1200 - (army.siegeDamage ?? 0);
+  const round = resolveRound(
+    army.units,
+    target.garrison,
+    { state, realm: army.ownerRealm },
+    { state, realm: target.ownerRealm, settlement: target.id },
+    streams.combat,
+    Math.max(0, fortHp),
+  );
+  army.siegeDamage = (army.siegeDamage ?? 0) + round.fortDamage;
+  applyLosses(army.units, round.attackerLosses);
+  applyLosses(target.garrison, round.defenderLosses);
+
+  const myStrength = totalUnits(army.units);
+  const start = army.battleStartStrength || myStrength;
+  if (totalUnits(target.garrison) <= 0) {
+    const from = target.ownerRealm;
+    target.ownerRealm = army.ownerRealm;
+    target.pop = Math.floor(target.pop * 0.9);
+    target.garrison = {};
+    target.trainQueue = [];
+    out.push({ kind: 'settlementCaptured', settlement: target.id, by: army.ownerRealm, from });
+    goHome();
+  } else if (myStrength <= 0) {
+    out.push({ kind: 'siegeRepelled', army: army.id, settlement: target.id });
+  } else if (myStrength < start * 0.3) {
+    out.push({ kind: 'armyRouted', army: army.id, camp: -1 });
+    goHome();
+  } else {
+    survivors.push(army);
+  }
 }

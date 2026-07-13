@@ -134,7 +134,7 @@ export const BUILDINGS: Record<BuildingId, BuildingDef> = {
     buildTime: 90,
     hp: 350,
     requiresAge: 'founding',
-    functions: [{ kind: 'training', units: ['militia', 'spearman', 'swordsman', 'ram'] }],
+    functions: [{ kind: 'training', units: ['militia', 'spearman', 'swordsman', 'ram', 'huscarl'] }],
     footprint: { w: 3, d: 3 },
   },
   archeryRange: {
@@ -154,7 +154,7 @@ export const BUILDINGS: Record<BuildingId, BuildingDef> = {
     buildTime: 110,
     hp: 320,
     requiresAge: 'flowering',
-    functions: [{ kind: 'training', units: ['lightCavalry', 'knight'] }],
+    functions: [{ kind: 'training', units: ['lightCavalry', 'knight', 'paladin', 'camelRider'] }],
     footprint: { w: 3, d: 2 },
   },
 };

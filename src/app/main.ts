@@ -1,3 +1,5 @@
+import { CULTURE_IDS, CULTURES } from '../content/cultures';
+import type { CultureId, Modifier } from '../content/schema';
 import { makeStreams } from '../core/rng';
 import { createArmies } from '../render/armiesMesh';
 import { createConstructed } from '../render/constructedMesh';
@@ -22,7 +24,52 @@ function seedFromHash(): number {
   return seed;
 }
 
-function boot(): void {
+function cultureFromHash(): CultureId | null {
+  const m = location.hash.match(/culture=(\w+)/);
+  return m && CULTURE_IDS.includes(m[1]) ? m[1] : null;
+}
+
+function bonusBlurb(bonuses: Modifier[]): string {
+  return bonuses
+    .map((b) => {
+      const what = b.resource ?? b.unitTag ?? b.stat.replace(/([A-Z])/g, ' $1').toLowerCase();
+      if (b.op === 'mul') return `+${Math.round((b.value - 1) * 100)}% ${what}`;
+      return `+${b.value} ${what}`;
+    })
+    .join(' · ');
+}
+
+/** Overlay with one card per culture; the choice joins the seed in the URL hash. */
+function pickCulture(el: HTMLElement): Promise<CultureId> {
+  return new Promise((resolve) => {
+    el.style.display = 'flex';
+    const box = document.createElement('div');
+    box.className = 'cp-box';
+    box.innerHTML = '<div class="cp-title">Choose your people</div><div class="cp-cards"></div>';
+    const cards = box.querySelector('.cp-cards') as HTMLElement;
+    for (const id of CULTURE_IDS) {
+      const c = CULTURES[id];
+      const card = document.createElement('button');
+      card.className = 'cp-card';
+      const trim = `#${c.architecture.palette.trim.toString(16).padStart(6, '0')}`;
+      card.style.borderColor = trim;
+      card.innerHTML = `
+        <b style="color:${trim}">${c.name}</b>
+        <span>${bonusBlurb(c.bonuses)}</span>
+        <i>unique: ${c.uniqueUnit} · ${c.uniqueTechs.join(', ')}</i>
+      `;
+      card.addEventListener('click', () => {
+        history.replaceState(null, '', `${location.hash}&culture=${id}`);
+        el.style.display = 'none';
+        resolve(id);
+      });
+      cards.appendChild(card);
+    }
+    el.appendChild(box);
+  });
+}
+
+async function boot(): Promise<void> {
   const canvas = document.getElementById('view') as HTMLCanvasElement;
   const hudEl = document.getElementById('hud')!;
   const chronicleEl = document.getElementById('chronicle')!;
@@ -31,14 +78,17 @@ function boot(): void {
   const techMenuEl = document.getElementById('techmenu')!;
   const toastsEl = document.getElementById('toasts')!;
   const loading = document.getElementById('loading')!;
+  const pickerEl = document.getElementById('culturepicker')!;
 
   const seed = seedFromHash();
   const world = generateWorld(seed);
   const { history: historyRng, combat, ai } = makeStreams(seed);
   const streams = { history: historyRng, combat, ai };
-  const state = initGameState(world);
   const scene = createScene(world, canvas);
   loading.style.display = 'none';
+  scene.render(); // one frame behind the picker, so the choice is made over a living world
+  const culture = cultureFromHash() ?? (await pickCulture(pickerEl));
+  const state = initGameState(world, culture);
 
   // the command queue — the ONLY path from input to sim state (save = seed + this log)
   let seq = 0;
@@ -55,15 +105,15 @@ function boot(): void {
   const chronicle = createChronicle(chronicleEl);
   const toasts = createToasts(toastsEl);
   const buildMenu = createBuildMenu(buildMenuEl, enqueue);
-  const armyPanel = createArmyPanel(armyPanelEl, enqueue);
-  const techMenu = createTechMenu(techMenuEl, enqueue);
+  const armyPanel = createArmyPanel(armyPanelEl, enqueue, culture);
+  const techMenu = createTechMenu(techMenuEl, enqueue, culture);
   const constructed = createConstructed(scene.scene, world);
   const armies = createArmies(scene.scene, world);
   const loop = startLoop({
     simTick: () => {
       const events = advanceTick(state, drain(), streams);
       chronicle.push(events);
-      toasts.push(events);
+      toasts.push(events, state);
     },
     onFrame: (alpha) => {
       hud.update(state, loop.getSpeed());

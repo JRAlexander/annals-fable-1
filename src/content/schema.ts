@@ -86,6 +86,8 @@ export interface TechDef {
   prereqs: TechId[];
   effects: Modifier[];
   unlocks?: { units?: UnitId[]; buildings?: BuildingId[] };
+  /** Set on unique techs: only this culture may research it. */
+  culture?: CultureId;
 }
 
 export type BuildingFunction =
@@ -133,4 +135,6 @@ export interface UnitDef {
   requiresTechs?: TechId[];
   /** Multiplier vs fortifications (camps now, walls/keeps later). */
   siegeMult?: number;
+  /** Set on unique units: only this culture may train it. */
+  culture?: CultureId;
 }

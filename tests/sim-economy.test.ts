@@ -7,11 +7,17 @@ import { freshSim, run } from './helpers';
 describe('economy', () => {
   it('all four stocks grow from the start over 200 ticks', () => {
     const sim = freshSim(1234);
-    const start = { ...sim.state.realms[0].stock };
+    const total = (which: 'start' | 'end', res: string) =>
+      sim.state.realms.reduce((t, r) => t + (r.stock as Record<string, number>)[res], 0);
+    const start = {
+      food: total('start', 'food'),
+      wood: total('start', 'wood'),
+      stone: total('start', 'stone'),
+      gold: total('start', 'gold'),
+    };
     run(sim, 200);
-    const end = sim.state.realms[0].stock;
     for (const r of ['food', 'wood', 'stone', 'gold'] as const) {
-      expect(end[r], r).toBeGreaterThan(start[r]);
+      expect(total('end', r), r).toBeGreaterThan(start[r]);
     }
   });
 
@@ -28,7 +34,9 @@ describe('economy', () => {
     const perTick = realm.stock.food - startFood;
     expect(perTick).toBeGreaterThan(0);
 
-    const popBeforeEating = sim.state.settlements.reduce((t, s) => t + s.pop, 0);
+    const popBeforeEating = sim.state.settlements
+      .filter((x) => x.ownerRealm === 0)
+      .reduce((t, s) => t + s.pop, 0);
     run(sim, TICKS_PER_DAY - 1); // completes the day, including consumption
     const expected = startFood + TICKS_PER_DAY * perTick - popBeforeEating * FOOD_PER_POP_DAY;
     expect(realm.stock.food).toBeCloseTo(expected, 6);

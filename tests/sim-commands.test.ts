@@ -16,13 +16,19 @@ describe('commands', () => {
     run(base, 600);
 
     const forest = freshSim(1234);
-    const cmds: IssuedCommand[] = forest.state.settlements.map((s, i) =>
-      issue(
-        { kind: 'setWorkerAllocation', settlement: s.id, alloc: { farm: 0, forest: 1, quarry: 0, trade: 0 } },
-        0,
-        i,
-      ),
-    );
+    const cmds: IssuedCommand[] = forest.state.settlements
+      .filter((s) => s.ownerRealm === 0)
+      .map((s, i) =>
+        issue(
+          {
+            kind: 'setWorkerAllocation',
+            settlement: s.id,
+            alloc: { farm: 0, forest: 1, quarry: 0, trade: 0 },
+          },
+          0,
+          i,
+        ),
+      );
     run(forest, 600, { 0: cmds });
 
     expect(forest.state.realms[0].stock.wood).toBeGreaterThan(base.state.realms[0].stock.wood);
@@ -61,15 +67,15 @@ describe('commands', () => {
         ),
       ],
     });
-    expect(events.filter((e) => e.kind === 'commandRejected')).toHaveLength(2);
+    expect(events.filter((e) => e.kind === 'commandRejected' && e.realm === 0)).toHaveLength(2);
   });
 
   it('future-milestone commands reject cleanly instead of throwing', () => {
     const sim = freshSim(7);
     const events = run(sim, 10, {
-      2: [issue({ kind: 'declareWar', target: 1 })],
+      2: [issue({ kind: 'moveUnits', units: [1], to: { x: 0, z: 0 } })],
     });
-    const rej = events.find((e) => e.kind === 'commandRejected');
+    const rej = events.find((e) => e.kind === 'commandRejected' && e.realm === 0);
     expect(rej && rej.kind === 'commandRejected' && rej.reason).toMatch(/not implemented/);
   });
 });

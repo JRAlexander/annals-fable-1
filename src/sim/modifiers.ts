@@ -1,4 +1,5 @@
 import { BUILDINGS } from '../content/buildings';
+import { CULTURES } from '../content/cultures';
 import type { BuildingId, Modifier, ResourceId, Stat, UnitTag } from '../content/schema';
 import { TECHS } from '../content/techs';
 import type { GameState, RealmId } from './state';
@@ -59,6 +60,7 @@ export function resolveStat(ctx: ModifierContext, base: number, q: StatQuery): n
   if (realm) {
     for (const t of realm.researchedTechs) apply(TECHS[t]?.effects);
     for (const b of buildingTypesInScope(ctx)) apply(BUILDINGS[b]?.effects);
+    if (realm.culture) apply(CULTURES[realm.culture]?.bonuses); // the M5 source, as designed
   }
   return (base + add) * mul;
 }
