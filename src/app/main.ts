@@ -7,6 +7,7 @@ import { advanceTick } from '../sim/tick';
 import { createBuildMenu } from '../ui/buildMenu';
 import { createChronicle } from '../ui/chronicle';
 import { createHud } from '../ui/hud';
+import { createTechMenu } from '../ui/techMenu';
 import { createToasts } from '../ui/toasts';
 import { generateWorld } from '../worldgen/world';
 import { SPEEDS, type Speed, startLoop } from './loop';
@@ -24,6 +25,7 @@ function boot(): void {
   const hudEl = document.getElementById('hud')!;
   const chronicleEl = document.getElementById('chronicle')!;
   const buildMenuEl = document.getElementById('buildmenu')!;
+  const techMenuEl = document.getElementById('techmenu')!;
   const toastsEl = document.getElementById('toasts')!;
   const loading = document.getElementById('loading')!;
 
@@ -50,6 +52,7 @@ function boot(): void {
   const chronicle = createChronicle(chronicleEl);
   const toasts = createToasts(toastsEl);
   const buildMenu = createBuildMenu(buildMenuEl, enqueue);
+  const techMenu = createTechMenu(techMenuEl, enqueue);
   const constructed = createConstructed(scene.scene, world);
   const loop = startLoop({
     simTick: () => {
@@ -60,17 +63,23 @@ function boot(): void {
     onFrame: () => {
       hud.update(state, loop.getSpeed());
       buildMenu.update(state);
+      techMenu.update(state);
       constructed.sync(state);
       scene.render();
     },
   });
-  const hud = createHud(hudEl, (s) => loop.setSpeed(s));
+  const hud = createHud(
+    hudEl,
+    (s) => loop.setSpeed(s),
+    () => techMenu.toggle(),
+  );
 
   window.addEventListener('keydown', (e) => {
     if (e.code === 'Space') {
       e.preventDefault();
       loop.setSpeed(loop.getSpeed() === 0 ? 5 : 0);
     }
+    if (e.code === 'KeyT') techMenu.toggle();
     const idx = ['Digit1', 'Digit2', 'Digit3'].indexOf(e.code);
     if (idx >= 0) loop.setSpeed(SPEEDS[idx + 1] as Speed);
   });

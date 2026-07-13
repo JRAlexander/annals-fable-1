@@ -1,4 +1,6 @@
+import { AGES } from '../content/ages';
 import { BUILDINGS } from '../content/buildings';
+import { TECHS } from '../content/techs';
 import type { Rng } from '../core/rng';
 import { pick } from '../core/rng';
 import type { SimEvent } from './events';
@@ -17,6 +19,11 @@ const RAISED_PHRASES = [
   'New timbers rise in',
   'The masons have finished their work in',
   'There is new building in',
+];
+const LEARNED_PHRASES = [
+  'The scholars of the realm have mastered',
+  'The wise now speak of',
+  'It is set down in the realm’s books:',
 ];
 
 /**
@@ -50,7 +57,10 @@ export function narrate(state: GameState, events: SimEvent[], rng: Rng): void {
         );
         break;
       case 'storageFull':
-        say(`The stores of the realm overflow with ${e.resource}; the surplus goes to waste.`);
+        // a gentle periodic reminder, not a daily drumbeat (the event itself stays daily)
+        if (dateOf(state.tick).dayOfYear % 30 === 1) {
+          say(`The stores of the realm overflow with ${e.resource}; the surplus goes to waste.`);
+        }
         break;
       case 'buildingCompleted': {
         const def = BUILDINGS[e.building];
@@ -60,6 +70,17 @@ export function narrate(state: GameState, events: SimEvent[], rng: Rng): void {
         );
         break;
       }
+      case 'researchCompleted': {
+        const def = TECHS[e.tech];
+        say(`${pick(rng, LEARNED_PHRASES)} ${def?.name ?? e.tech}.`, 'good');
+        break;
+      }
+      case 'ageAdvanceStarted':
+        say('The realm turns its wealth and its will toward a new age.');
+        break;
+      case 'ageAdvanced':
+        say(`Let it be written in letters of gold: the realm enters ${AGES[e.age].name}.`, 'good');
+        break;
       case 'dayEnd': {
         const d = dateOf(state.tick);
         if (d.day > 0 && d.day % DAYS_PER_YEAR === 0) {

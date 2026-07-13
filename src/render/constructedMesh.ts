@@ -14,6 +14,11 @@ const BUILDING_ARCH: Record<BuildingId, DecorArch> = {
   quarry: 'smithy',
   market: 'shop',
   storehouse: 'warehouse',
+  temple: 'temple',
+  granary: 'granary',
+  university: 'tower',
+  guildhall: 'tavern',
+  keep: 'keep',
 };
 
 const GOLDEN_ANGLE = 2.399963;

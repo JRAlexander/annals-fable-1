@@ -107,6 +107,62 @@
       }
       #toasts .toast.bad { border-color: #c98a7a; color: #e9b3a5; }
       #toasts .toast.good { border-color: #c9a227; color: #d8c88f; }
+      #techmenu {
+        position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+        width: min(940px, 92vw); max-height: 82vh; overflow-y: auto;
+        padding: 14px 16px;
+        font: 12.5px/1.5 Georgia, 'Times New Roman', serif;
+        color: #e9dcc3;
+        background: rgba(18, 16, 12, 0.94);
+        border: 1px solid rgba(201, 162, 39, 0.5);
+        border-radius: 5px; z-index: 10;
+      }
+      #techmenu .tm-head { display: flex; align-items: center; gap: 16px; }
+      #techmenu .tm-age { font-size: 16px; letter-spacing: 2px; color: #c9a227; }
+      #techmenu #tm-research { color: #9a8f76; }
+      #techmenu #tm-close {
+        margin-left: auto; background: none; border: none; color: #e9dcc3;
+        font: 14px Georgia, serif; cursor: pointer;
+      }
+      #techmenu .tm-advance {
+        display: flex; align-items: center; gap: 12px; margin: 10px 0 12px;
+        padding: 8px 10px; background: rgba(201, 162, 39, 0.08);
+        border: 1px solid rgba(201, 162, 39, 0.35); border-radius: 4px;
+      }
+      #techmenu .tm-advance button {
+        margin-left: auto; background: rgba(201, 162, 39, 0.25);
+        border: 1px solid #c9a227; color: #e9dcc3; font: inherit;
+        padding: 4px 16px; border-radius: 3px; cursor: pointer;
+      }
+      #techmenu .tm-advance button:disabled { opacity: 0.4; cursor: default; }
+      #techmenu .tm-cols { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+      #techmenu .tm-colhead {
+        font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+        color: #9a8f76; margin-bottom: 6px; border-bottom: 1px solid rgba(233, 220, 195, 0.15);
+      }
+      #techmenu .tm-card {
+        margin-bottom: 8px; padding: 6px 8px;
+        background: rgba(233, 220, 195, 0.05);
+        border: 1px solid rgba(233, 220, 195, 0.2); border-radius: 3px;
+      }
+      #techmenu .tm-card.done { border-color: rgba(201, 162, 39, 0.6); }
+      #techmenu .tm-card.active { border-color: #c9a227; }
+      #techmenu .tm-card.locked { opacity: 0.55; }
+      #techmenu .tm-card button {
+        width: 100%; text-align: left; background: none; border: none;
+        color: #e9dcc3; font: inherit; cursor: pointer; padding: 0;
+        display: flex; justify-content: space-between; gap: 6px;
+      }
+      #techmenu .tm-card button:disabled { cursor: default; }
+      #techmenu .tm-card button:hover:not(:disabled) b { color: #c9a227; }
+      #techmenu .tm-card .cost { color: #9a8f76; font-size: 11px; white-space: nowrap; }
+      #techmenu .tm-card .fx { color: #d8c88f; font-size: 11px; }
+      #techmenu .tm-card .sub { color: #9a8f76; font-size: 10.5px; }
+      #techmenu .tm-card .bar {
+        height: 3px; background: rgba(233, 220, 195, 0.1); border-radius: 2px;
+        overflow: hidden; margin-top: 3px;
+      }
+      #techmenu .tm-card .bar div { height: 100%; width: 0; background: #c9a227; }
     </style>
   </head>
   <body>
@@ -114,6 +170,7 @@
     <div id="hud"></div>
     <div id="chronicle"></div>
     <div id="buildmenu"></div>
+    <div id="techmenu"></div>
     <div id="toasts"></div>
     <div id="loading">
       <div style="letter-spacing:6px">R E A L M S</div>

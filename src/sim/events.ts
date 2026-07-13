@@ -1,4 +1,4 @@
-import type { BuildingId, ResourceId } from '../content/schema';
+import type { AgeId, BuildingId, ResourceId, TechId } from '../content/schema';
 import type { RealmId } from './state';
 
 /**
@@ -13,5 +13,9 @@ export type SimEvent =
   | { kind: 'storageFull'; realm: RealmId; resource: ResourceId }
   | { kind: 'buildingQueued'; settlement: number; building: BuildingId }
   | { kind: 'buildingCompleted'; settlement: number; building: BuildingId }
+  | { kind: 'researchStarted'; realm: RealmId; tech: TechId }
+  | { kind: 'researchCompleted'; realm: RealmId; tech: TechId }
+  | { kind: 'ageAdvanceStarted'; realm: RealmId; age: AgeId }
+  | { kind: 'ageAdvanced'; realm: RealmId; age: AgeId }
   | { kind: 'commandRejected'; realm: RealmId; reason: string }
   | { kind: 'chronicle'; tick: number; text: string; tone: 'neutral' | 'good' | 'grim' };

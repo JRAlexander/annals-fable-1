@@ -1,6 +1,8 @@
+import { AGES, ageIndex } from '../content/ages';
 import { BUILDING_IDS, BUILDINGS } from '../content/buildings';
 import { JOB_RESOURCE, WORK_JOBS, type WorkJob } from '../content/economy';
 import type { ResourceId } from '../content/schema';
+import { TECHS } from '../content/techs';
 import { jobCapacity } from '../sim/buildings';
 import type { Command } from '../sim/commands';
 import type { GameState } from '../sim/state';
@@ -53,7 +55,7 @@ export function createBuildMenu(el: HTMLElement, enqueue: (cmd: Command) => void
   });
 
   // build buttons
-  const buttons = new Map<string, HTMLButtonElement>();
+  const buttons = new Map<string, { btn: HTMLButtonElement; sub: HTMLElement }>();
   for (const id of BUILDING_IDS) {
     const def = BUILDINGS[id];
     const b = document.createElement('button');
@@ -61,7 +63,7 @@ export function createBuildMenu(el: HTMLElement, enqueue: (cmd: Command) => void
     b.innerHTML = `<b>${def.name}</b><span>${costText(def.cost)}</span>`;
     b.addEventListener('click', () => enqueue({ kind: 'queueBuilding', settlement: selected, building: id }));
     buildingsEl.appendChild(b);
-    buttons.set(id, b);
+    buttons.set(id, { btn: b, sub: b.querySelector('span') as HTMLElement });
   }
 
   // allocation sliders
@@ -109,11 +111,20 @@ export function createBuildMenu(el: HTMLElement, enqueue: (cmd: Command) => void
 
       for (const id of BUILDING_IDS) {
         const def = BUILDINGS[id];
-        const affordable = Object.entries(def.cost).every(
-          ([r, n]) => realm.stock[r as ResourceId] >= (n as number),
-        );
-        const b = buttons.get(id);
-        if (b) b.disabled = !affordable;
+        const ui = buttons.get(id);
+        if (!ui) continue;
+        // first unmet gate wins: age, then tech, then cost
+        let reason: string | null = null;
+        if (ageIndex(def.requiresAge) > ageIndex(realm.age)) reason = `needs ${AGES[def.requiresAge].name}`;
+        else {
+          const missingTech = (def.requiresTechs ?? []).find((t) => !realm.researchedTechs.includes(t));
+          if (missingTech) reason = `needs ${TECHS[missingTech]?.name ?? missingTech}`;
+          else if (!Object.entries(def.cost).every(([r, n]) => realm.stock[r as ResourceId] >= (n as number)))
+            reason = 'cannot afford';
+        }
+        ui.btn.disabled = !!reason;
+        const sub = reason && reason !== 'cannot afford' ? reason : costText(def.cost);
+        if (ui.sub.textContent !== sub) ui.sub.textContent = sub;
       }
 
       const sig = s.buildQueue.map((q) => `${q.building}:${q.progress | 0}`).join(',');
