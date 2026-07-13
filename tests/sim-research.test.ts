@@ -41,8 +41,10 @@ describe('research', () => {
   });
 
   it('every tech measurably changes some resolved stat (the M3 done-criterion)', () => {
+    // one world for all techs — a fresh worldgen per tech blows CI's test timeout
+    const sim = freshSim(1234);
     for (const tech of Object.values(TECHS)) {
-      const sim = freshSim(1234);
+      sim.state.realms[0].researchedTechs = [];
       const ctx = { state: sim.state, realm: 0 };
       const queries = [
         ...WORK_JOBS.map((j) => ({
