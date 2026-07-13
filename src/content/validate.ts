@@ -2,6 +2,7 @@ import { AGE_ORDER, AGES, ageIndex } from './ages';
 import { BUILDINGS } from './buildings';
 import type { Cost, ResourceId } from './schema';
 import { TECHS } from './techs';
+import { UNITS } from './units';
 
 const RESOURCES: readonly ResourceId[] = ['food', 'wood', 'stone', 'gold'];
 
@@ -60,7 +61,9 @@ export function validateContent(): string[] {
       else if (!(building.requiresTechs ?? []).includes(key))
         errors.push(`tech ${key}: unlocks '${b}' but that building does not require it`);
     }
-    if (def.unlocks?.units?.length) errors.push(`tech ${key}: unit unlocks are not available until M4`);
+    for (const u of def.unlocks?.units ?? []) {
+      if (!UNITS[u]) errors.push(`tech ${key}: unlocks unit '${u}' which does not exist`);
+    }
     for (const m of def.effects) {
       if (m.op === 'mul' && (!Number.isFinite(m.value) || m.value <= 0))
         errors.push(`tech ${key}: mul modifier must be finite and > 0`);
@@ -80,6 +83,31 @@ export function validateContent(): string[] {
     state.set(id, 'done');
   };
   for (const id of Object.keys(TECHS)) visit(id, []);
+
+  // units: id keys, costs, trainable somewhere no later than their own age, tech refs
+  const trainedAt = new Map<string, string[]>(); // unitId → building ids that train it
+  for (const [bKey, b] of Object.entries(BUILDINGS)) {
+    for (const fn of b.functions) {
+      if (fn.kind === 'training') {
+        for (const u of fn.units) {
+          if (!UNITS[u]) errors.push(`building ${bKey}: trains unknown unit '${u}'`);
+          else trainedAt.set(u, [...(trainedAt.get(u) ?? []), bKey]);
+        }
+      }
+    }
+  }
+  for (const [key, def] of Object.entries(UNITS)) {
+    if (def.id !== key) errors.push(`unit ${key}: id '${def.id}' mismatch`);
+    badCost(def.cost, `unit ${key}`, errors);
+    const homes = trainedAt.get(key) ?? [];
+    if (homes.length === 0) errors.push(`unit ${key}: no building trains it`);
+    else if (!homes.some((b) => ageIndex(BUILDINGS[b].requiresAge) <= ageIndex(def.requiresAge)))
+      errors.push(`unit ${key}: every training building arrives after the unit's own age`);
+    for (const t of def.requiresTechs ?? []) {
+      if (!TECHS[t]) errors.push(`unit ${key}: requiresTechs '${t}' does not exist`);
+    }
+    if (def.hp <= 0 || def.popCost <= 0 || def.speed <= 0) errors.push(`unit ${key}: non-positive vitals`);
+  }
 
   // every advancement is satisfiable: each non-terminal age offers enough building types
   for (let i = 0; i < AGE_ORDER.length - 1; i++) {

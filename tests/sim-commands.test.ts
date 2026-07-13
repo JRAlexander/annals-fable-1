@@ -67,7 +67,7 @@ describe('commands', () => {
   it('future-milestone commands reject cleanly instead of throwing', () => {
     const sim = freshSim(7);
     const events = run(sim, 10, {
-      2: [issue({ kind: 'trainUnits', settlement: 0, unit: 'militia', count: 5 })],
+      2: [issue({ kind: 'declareWar', target: 1 })],
     });
     const rej = events.find((e) => e.kind === 'commandRejected');
     expect(rej && rej.kind === 'commandRejected' && rej.reason).toMatch(/not implemented/);

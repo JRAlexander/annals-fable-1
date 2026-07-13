@@ -3,11 +3,13 @@ import { narrate } from './chronicle';
 import { applyCommands, type IssuedCommand } from './commands';
 import type { SimEvent } from './events';
 import type { GameState } from './state';
+import { armiesSystem } from './systems/armies';
 import { constructionSystem } from './systems/construction';
 import { populationSystem } from './systems/population';
 import { productionSystem } from './systems/production';
 import { researchSystem } from './systems/research';
 import { storageSystem } from './systems/storage';
+import { trainingSystem } from './systems/training';
 import { dateOf, isDayEnd } from './time';
 
 /** The world stream is spent during generateWorld; the sim uses the rest. */
@@ -25,6 +27,8 @@ export function advanceTick(state: GameState, issued: IssuedCommand[], streams: 
   applyCommands(state, issued, events);
   constructionSystem(state, events);
   researchSystem(state, events);
+  trainingSystem(state, events);
+  armiesSystem(state, events, streams);
   productionSystem(state, events);
   if (isDayEnd(state.tick)) {
     populationSystem(state, events);

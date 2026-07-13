@@ -1,5 +1,6 @@
 import { makeStreams } from '../core/rng';
 import { classifyBiomes } from './biomes';
+import { siteCamps } from './camps';
 import { carveRivers } from './hydrology';
 import { buildNavGrid } from './navgrid';
 import { buildRoads } from './roads';
@@ -28,6 +29,8 @@ export function generateWorld(seed: number): WorldData {
   const roads = buildRoads(heightmap, biome, settlements, rng);
   for (const s of settlements) scatterBuildings(fields, s, rng);
   const navCost = buildNavGrid(heightmap, biome, roads);
+  // drawn LAST so every earlier draw (terrain, settlements) keeps ANNALS seed parity
+  const camps = siteCamps(heightmap, biome, settlements, rng);
 
   const capital = settlements.find((s) => s.tier === 'capital') ?? settlements[0];
   return {
@@ -44,5 +47,6 @@ export function generateWorld(seed: number): WorldData {
     capital,
     roads,
     navCost,
+    camps,
   };
 }

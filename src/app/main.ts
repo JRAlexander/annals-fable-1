@@ -1,9 +1,11 @@
 import { makeStreams } from '../core/rng';
+import { createArmies } from '../render/armiesMesh';
 import { createConstructed } from '../render/constructedMesh';
 import { createScene } from '../render/scene';
 import type { Command, IssuedCommand } from '../sim/commands';
 import { initGameState } from '../sim/state';
 import { advanceTick } from '../sim/tick';
+import { createArmyPanel } from '../ui/armyPanel';
 import { createBuildMenu } from '../ui/buildMenu';
 import { createChronicle } from '../ui/chronicle';
 import { createHud } from '../ui/hud';
@@ -25,6 +27,7 @@ function boot(): void {
   const hudEl = document.getElementById('hud')!;
   const chronicleEl = document.getElementById('chronicle')!;
   const buildMenuEl = document.getElementById('buildmenu')!;
+  const armyPanelEl = document.getElementById('armypanel')!;
   const techMenuEl = document.getElementById('techmenu')!;
   const toastsEl = document.getElementById('toasts')!;
   const loading = document.getElementById('loading')!;
@@ -52,19 +55,23 @@ function boot(): void {
   const chronicle = createChronicle(chronicleEl);
   const toasts = createToasts(toastsEl);
   const buildMenu = createBuildMenu(buildMenuEl, enqueue);
+  const armyPanel = createArmyPanel(armyPanelEl, enqueue);
   const techMenu = createTechMenu(techMenuEl, enqueue);
   const constructed = createConstructed(scene.scene, world);
+  const armies = createArmies(scene.scene, world);
   const loop = startLoop({
     simTick: () => {
       const events = advanceTick(state, drain(), streams);
       chronicle.push(events);
       toasts.push(events);
     },
-    onFrame: () => {
+    onFrame: (alpha) => {
       hud.update(state, loop.getSpeed());
       buildMenu.update(state);
+      armyPanel.update(state);
       techMenu.update(state);
       constructed.sync(state);
+      armies.sync(state, alpha);
       scene.render();
     },
   });

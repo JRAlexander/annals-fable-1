@@ -198,6 +198,80 @@ export const TECHS: Record<TechId, TechDef> = {
     effects: [{ stat: 'housingCap', op: 'mul', value: 1.15 }],
   },
 
+  // ------------------------- Military (M4 triads) --------------------------
+  forging: {
+    id: 'forging',
+    name: 'Forging',
+    age: 'flowering',
+    cost: { food: 100, gold: 80 },
+    researchTime: 180,
+    researchedAt: 'barracks',
+    prereqs: [],
+    effects: [
+      { stat: 'unitAttack', op: 'add', value: 1, unitTag: 'infantry' },
+      { stat: 'unitAttack', op: 'add', value: 1, unitTag: 'cavalry' },
+    ],
+  },
+  ironCasting: {
+    id: 'ironCasting',
+    name: 'Iron Casting',
+    age: 'highKingdom',
+    cost: { food: 200, gold: 180 },
+    researchTime: 240,
+    researchedAt: 'barracks',
+    prereqs: ['forging'],
+    effects: [
+      { stat: 'unitAttack', op: 'add', value: 1, unitTag: 'infantry' },
+      { stat: 'unitAttack', op: 'add', value: 1, unitTag: 'cavalry' },
+    ],
+  },
+  fletching: {
+    id: 'fletching',
+    name: 'Fletching',
+    age: 'flowering',
+    cost: { wood: 80, gold: 80 },
+    researchTime: 180,
+    researchedAt: 'archeryRange',
+    prereqs: [],
+    effects: [{ stat: 'unitAttack', op: 'add', value: 1, unitTag: 'ranged' }],
+  },
+  bodkinArrows: {
+    id: 'bodkinArrows',
+    name: 'Bodkin Arrows',
+    age: 'highKingdom',
+    cost: { wood: 180, gold: 160 },
+    researchTime: 240,
+    researchedAt: 'archeryRange',
+    prereqs: ['fletching'],
+    effects: [{ stat: 'unitAttack', op: 'add', value: 1, unitTag: 'ranged' }],
+  },
+  scaleArmor: {
+    id: 'scaleArmor',
+    name: 'Scale Armor',
+    age: 'flowering',
+    cost: { food: 120, gold: 90 },
+    researchTime: 180,
+    researchedAt: 'barracks',
+    prereqs: [],
+    effects: [
+      { stat: 'unitArmor', op: 'add', value: 1, unitTag: 'infantry' },
+      { stat: 'unitArmor', op: 'add', value: 1, unitTag: 'cavalry' },
+    ],
+  },
+  plateArmor: {
+    id: 'plateArmor',
+    name: 'Plate Armor',
+    age: 'golden',
+    cost: { food: 300, gold: 350 },
+    researchTime: 300,
+    researchedAt: 'barracks',
+    prereqs: ['scaleArmor'],
+    effects: [
+      { stat: 'unitArmor', op: 'add', value: 2, unitTag: 'infantry' },
+      { stat: 'unitArmor', op: 'add', value: 2, unitTag: 'cavalry' },
+    ],
+  },
+
   // ---------------------------- The Golden Age -----------------------------
   physicians: {
     id: 'physicians',

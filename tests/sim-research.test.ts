@@ -56,6 +56,10 @@ describe('research', () => {
         { label: 'build', q: { stat: 'buildSpeed' as const }, base: 1 },
         { label: 'research', q: { stat: 'researchSpeed' as const }, base: 1 },
         { label: 'wallHp', q: { stat: 'wallHp' as const }, base: 100 },
+        ...(['infantry', 'cavalry', 'ranged', 'siege'] as const).flatMap((tag) => [
+          { label: `atk:${tag}`, q: { stat: 'unitAttack' as const, unitTag: tag }, base: 8 },
+          { label: `arm:${tag}`, q: { stat: 'unitArmor' as const, unitTag: tag }, base: 2 },
+        ]),
       ];
       const before = queries.map((q) => resolveStat(ctx, q.base, q.q));
       sim.state.realms[0].researchedTechs.push(tech.id);

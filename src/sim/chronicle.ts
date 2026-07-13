@@ -20,6 +20,12 @@ const RAISED_PHRASES = [
   'The masons have finished their work in',
   'There is new building in',
 ];
+const MARCH_PHRASES = [
+  'The banners are raised and the host marches',
+  'With drums and hard bread the levies set out',
+  'The realm sends its soldiers',
+];
+const VICTORY_PHRASES = ['Victory!', 'The day is won!', 'Let the bells ring:'];
 const LEARNED_PHRASES = [
   'The scholars of the realm have mastered',
   'The wise now speak of',
@@ -80,6 +86,24 @@ export function narrate(state: GameState, events: SimEvent[], rng: Rng): void {
         break;
       case 'ageAdvanced':
         say(`Let it be written in letters of gold: the realm enters ${AGES[e.age].name}.`, 'good');
+        break;
+      case 'armyDeparted':
+        say(`${pick(rng, MARCH_PHRASES)} against the bandit camp in the wilds.`);
+        break;
+      case 'battleStarted':
+        say('Steel rings in the wilds: battle is joined at the bandit palisade.');
+        break;
+      case 'campCleared':
+        say(`${pick(rng, VICTORY_PHRASES)} The bandit camp is burned and ${e.loot} gold recovered.`, 'good');
+        break;
+      case 'battleLost':
+        say('Grievous news: the host was cut down to the last beneath the bandit palisade.', 'grim');
+        break;
+      case 'armyRouted':
+        say('The line broke and the survivors fled for home, harried and ashamed.', 'grim');
+        break;
+      case 'armyReturned':
+        say(`The banners come home to ${nameOf(e.settlement)}.`);
         break;
       case 'dayEnd': {
         const d = dateOf(state.tick);

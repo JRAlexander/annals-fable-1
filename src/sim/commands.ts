@@ -3,8 +3,10 @@ import { BUILDINGS } from '../content/buildings';
 import { WORK_JOBS, type WorkJob } from '../content/economy';
 import type { BuildingId, Cost, ResourceId, TechId, UnitId } from '../content/schema';
 import { TECHS } from '../content/techs';
+import { UNITS } from '../content/units';
 import type { SimEvent } from './events';
 import type { GameState, Realm, RealmId } from './state';
+import { routePath } from './systems/armies';
 
 export interface Vec2 {
   x: number;
@@ -12,8 +14,9 @@ export interface Vec2 {
 }
 
 export type Objective =
-  | { kind: 'attackSettlement'; settlement: number }
-  | { kind: 'defendSettlement'; settlement: number };
+  | { kind: 'attackCamp'; camp: number }
+  | { kind: 'attackSettlement'; settlement: number } // M5
+  | { kind: 'returnHome' };
 
 /**
  * Every player AND AI mutation flows through this union — it is the sim's
@@ -27,9 +30,10 @@ export type Command =
   | { kind: 'queueBuilding'; settlement: number; building: BuildingId }
   | { kind: 'setResearch'; tech: TechId }
   | { kind: 'advanceAge' }
-  | { kind: 'trainUnits'; settlement: number; unit: UnitId; count: number } // M4
+  | { kind: 'trainUnits'; settlement: number; unit: UnitId; count: number }
+  | { kind: 'formArmy'; settlement: number; units: Partial<Record<UnitId, number>> }
   | { kind: 'declareWar'; target: RealmId } // M5
-  | { kind: 'orderArmy'; army: number; objective: Objective } // M4
+  | { kind: 'orderArmy'; army: number; objective: Objective }
   // RTS mode (M7+), same envelope, typed now:
   | { kind: 'moveUnits'; units: number[]; to: Vec2 }
   | { kind: 'attackTarget'; units: number[]; target: number }
@@ -189,6 +193,159 @@ export function applyCommands(state: GameState, issued: IssuedCommand[], out: Si
         pay(r, def.cost);
         r.research = { kind: 'tech', tech: def.id, progress: 0 };
         out.push({ kind: 'researchStarted', realm, tech: def.id });
+        break;
+      }
+      case 'trainUnits': {
+        const s = state.settlements[cmd.settlement];
+        if (!s) {
+          reject(out, realm, `no such settlement ${cmd.settlement}`);
+          break;
+        }
+        if (s.ownerRealm !== realm) {
+          reject(out, realm, `settlement ${cmd.settlement} not owned by realm ${realm}`);
+          break;
+        }
+        const def = UNITS[cmd.unit];
+        if (!def || !Number.isInteger(cmd.count) || cmd.count <= 0) {
+          reject(out, realm, `invalid training order '${cmd.unit}' ×${cmd.count}`);
+          break;
+        }
+        const r = state.realms[realm];
+        if (ageIndex(def.requiresAge) > ageIndex(r.age)) {
+          reject(out, realm, `${def.name} requires ${AGES[def.requiresAge].name}`);
+          break;
+        }
+        const missingTech = (def.requiresTechs ?? []).find((t) => !r.researchedTechs.includes(t));
+        if (missingTech) {
+          reject(
+            out,
+            realm,
+            `${def.name} requires the ${TECHS[missingTech]?.name ?? missingTech} technology`,
+          );
+          break;
+        }
+        const trainer = Object.entries(BUILDINGS).find(
+          ([id, b]) =>
+            (s.buildings[id] ?? 0) > 0 &&
+            b.functions.some((f) => f.kind === 'training' && f.units.includes(def.id)),
+        );
+        if (!trainer) {
+          reject(out, realm, `${def.name} needs a training building here (e.g. barracks/range/stable)`);
+          break;
+        }
+        const popNeeded = def.popCost * cmd.count;
+        if (s.pop - popNeeded < 50) {
+          reject(
+            out,
+            realm,
+            `not enough folk in ${state.world.settlements[s.id].name} to enlist ${cmd.count}`,
+          );
+          break;
+        }
+        const totalCost: Cost = {};
+        for (const [res, amt] of Object.entries(def.cost) as [ResourceId, number][]) {
+          totalCost[res] = amt * cmd.count;
+        }
+        const short = shortOf(r, totalCost);
+        if (short) {
+          reject(out, realm, `cannot afford ${cmd.count}× ${def.name}: needs ${short[1]} ${short[0]}`);
+          break;
+        }
+        pay(r, totalCost);
+        s.pop -= popNeeded;
+        s.trainQueue.push({ unit: def.id, remaining: cmd.count, progress: 0 });
+        break;
+      }
+      case 'formArmy': {
+        const s = state.settlements[cmd.settlement];
+        if (!s) {
+          reject(out, realm, `no such settlement ${cmd.settlement}`);
+          break;
+        }
+        if (s.ownerRealm !== realm) {
+          reject(out, realm, `settlement ${cmd.settlement} not owned by realm ${realm}`);
+          break;
+        }
+        const taking: [UnitId, number][] = [];
+        for (const [id, n] of Object.entries(cmd.units) as [UnitId, number][]) {
+          if (!Number.isInteger(n) || n < 0) {
+            taking.length = 0;
+            break;
+          }
+          if (n === 0) continue;
+          if ((s.garrison[id] ?? 0) < n) {
+            reject(out, realm, `garrison has only ${s.garrison[id] ?? 0} ${UNITS[id]?.name ?? id}`);
+            taking.length = 0;
+            break;
+          }
+          taking.push([id, n]);
+        }
+        if (taking.length === 0) {
+          if (!out.some((e) => e.kind === 'commandRejected')) reject(out, realm, 'an army needs soldiers');
+          break;
+        }
+        const site = state.world.settlements[s.id];
+        const units: Partial<Record<UnitId, number>> = {};
+        let strength = 0;
+        for (const [id, n] of taking) {
+          s.garrison[id] = (s.garrison[id] ?? 0) - n;
+          if (s.garrison[id] === 0) delete s.garrison[id];
+          units[id] = n;
+          strength += n;
+        }
+        state.armies.push({
+          id: state.nextArmyId,
+          ownerRealm: realm,
+          home: s.id,
+          units,
+          x: site.x,
+          z: site.z,
+          prevX: site.x,
+          prevZ: site.z,
+          path: [[site.i, site.j]],
+          pathIdx: 0,
+          cellProgress: 0,
+          objective: null,
+          phase: 'idle',
+          battleStartStrength: 0,
+        });
+        out.push({ kind: 'armyFormed', army: state.nextArmyId, settlement: s.id, strength });
+        state.nextArmyId += 1;
+        break;
+      }
+      case 'orderArmy': {
+        const army = state.armies.find((a) => a.id === cmd.army);
+        if (!army) {
+          reject(out, realm, `no such army ${cmd.army}`);
+          break;
+        }
+        if (army.ownerRealm !== realm) {
+          reject(out, realm, `army ${cmd.army} not yours`);
+          break;
+        }
+        if (army.phase === 'fighting') {
+          reject(out, realm, 'the army is locked in battle');
+          break;
+        }
+        if (cmd.objective.kind === 'attackCamp') {
+          const camp = state.camps[cmd.objective.camp];
+          const site = state.world.camps[cmd.objective.camp];
+          if (!camp || !site || camp.cleared) {
+            reject(out, realm, 'no such camp remains');
+            break;
+          }
+          army.objective = { kind: 'attackCamp', camp: camp.id };
+          army.phase = 'marching';
+          routePath(state, army, site.i, site.j);
+          out.push({ kind: 'armyDeparted', army: army.id, camp: camp.id });
+        } else if (cmd.objective.kind === 'returnHome') {
+          army.objective = { kind: 'returnHome' };
+          army.phase = 'returning';
+          const home = state.world.settlements[army.home];
+          routePath(state, army, home.i, home.j);
+        } else {
+          reject(out, realm, `objective '${cmd.objective.kind}' not implemented yet`);
+        }
         break;
       }
       case 'advanceAge': {

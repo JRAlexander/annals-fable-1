@@ -123,9 +123,14 @@ export interface UnitDef {
   attack: number;
   /** 0 = melee. */
   range: number;
+  /** `unitArmor` modifiers add to BOTH values. */
   armor: { melee: number; pierce: number };
   /** Tiles per tick — army march speed now, per-unit movement in RTS mode. */
   speed: number;
   /** AoE-style counters as data. */
   attackBonuses?: { tag: UnitTag; mult: number }[];
+  requiresAge: AgeId;
+  requiresTechs?: TechId[];
+  /** Multiplier vs fortifications (camps now, walls/keeps later). */
+  siegeMult?: number;
 }

@@ -90,6 +90,8 @@ export interface WorldData {
   settlements: SettlementSite[];
   capital: SettlementSite;
   roads: Road[];
-  /** Per-cell movement cost (derived; unused until RTS pathfinding lands). */
+  /** Per-cell movement cost — armies path over this from M4. */
   navCost: Float32Array;
+  /** Bandit camp sites (static geography; live camp state is in GameState). */
+  camps: import('./camps').CampSite[];
 }
