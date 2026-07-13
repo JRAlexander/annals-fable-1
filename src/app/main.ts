@@ -15,6 +15,7 @@ import { createHud } from '../ui/hud';
 import { createTechMenu } from '../ui/techMenu';
 import { createToasts } from '../ui/toasts';
 import { generateWorld } from '../worldgen/world';
+import { createInput, describeSelection } from './input';
 import { SPEEDS, type Speed, startLoop } from './loop';
 import { anySaveFor, clearSave, createRecorder, loadSave, replay } from './save';
 
@@ -98,7 +99,8 @@ function pickCulture(el: HTMLElement, seed: number): Promise<{ culture: CultureI
     box.insertAdjacentHTML(
       'beforeend',
       `<div class="cp-help">Win by taking every rival capital, or by raising a Wonder and holding it. Lose your capital, lose everything.<br>
-       Build (right panel) · Army &amp; Diplomacy (middle panel) · Tech (T) · Speed 1/2/3, Space pauses. The game saves itself each day.</div>`,
+       Build (right panel) · Army &amp; Diplomacy (middle panel) · Tech (T) · Speed 1/2/3, Space pauses. The game saves itself each day.<br>
+       Command armies on the map: left-click or drag to select, right-click to march or attack, middle-drag to orbit.</div>`,
     );
     el.appendChild(box);
   });
@@ -142,6 +144,8 @@ async function boot(): Promise<void> {
   const loading = document.getElementById('loading')!;
   const pickerEl = document.getElementById('culturepicker')!;
   const endEl = document.getElementById('endscreen')!;
+  const selBoxEl = document.getElementById('selbox')!;
+  const selChipEl = document.getElementById('selchip')!;
 
   const seed = seedFromHash();
   const world = generateWorld(seed);
@@ -194,6 +198,18 @@ async function boot(): Promise<void> {
   const techMenu = createTechMenu(techMenuEl, enqueue, culture);
   const constructed = createConstructed(scene.scene, world);
   const armies = createArmies(scene.scene, world);
+  const input = createInput({
+    scene,
+    world,
+    state,
+    armies,
+    boxEl: selBoxEl,
+    enqueue,
+    onSelection: () => {
+      selChipEl.textContent = describeSelection(state, input.selection);
+      selChipEl.style.display = input.selection.size ? 'block' : 'none';
+    },
+  });
   let ended = state.outcome !== null; // a replayed ending is not re-announced
   const loop = startLoop({
     simTick: () => {
@@ -215,7 +231,13 @@ async function boot(): Promise<void> {
       armyPanel.update(state);
       techMenu.update(state);
       constructed.sync(state);
-      armies.sync(state, alpha);
+      // prune dead armies out of the selection so rings and orders stay honest
+      for (const id of input.selection) {
+        if (!state.armies.some((a) => a.id === id && a.ownerRealm === 0)) input.selection.delete(id);
+      }
+      armies.sync(state, alpha, input.selection);
+      if (input.selection.size) selChipEl.textContent = describeSelection(state, input.selection);
+      else if (selChipEl.style.display !== 'none') selChipEl.style.display = 'none';
       scene.render();
     },
   });
@@ -226,7 +248,7 @@ async function boot(): Promise<void> {
   );
 
   // debug/verification hook — the sim is still command-driven; this is a window for tests
-  (window as unknown as Record<string, unknown>).__realms = { state, enqueue };
+  (window as unknown as Record<string, unknown>).__realms = { state, enqueue, scene };
 
   window.addEventListener('keydown', (e) => {
     if (e.code === 'Space') {

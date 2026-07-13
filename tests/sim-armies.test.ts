@@ -127,7 +127,14 @@ describe('armies', () => {
       'battle resolved',
     );
     expect(sim.state.camps[0].cleared).toBe(false);
-    expect(events.some((e) => e.kind === 'battleLost' || e.kind === 'armyRouted')).toBe(true);
+    // it may die at the palisade, rout, or (since M7a) be cut down by roaming
+    // raiders in the open field on the way — all of them are losing
+    expect(
+      events.some(
+        (e) =>
+          e.kind === 'battleLost' || e.kind === 'armyRouted' || (e.kind === 'armyDestroyed' && e.realm === 0),
+      ),
+    ).toBe(true);
   });
 
   it('marching is deterministic: same seed & commands → same positions', () => {

@@ -3,10 +3,19 @@ import { BUILDINGS } from '../content/buildings';
 import { WORK_JOBS, type WorkJob } from '../content/economy';
 import type { BuildingId, Cost, ResourceId, TechId, UnitId } from '../content/schema';
 import { TECHS } from '../content/techs';
+import { WILD_REALM } from '../content/threats';
 import { UNITS } from '../content/units';
+import { hidx, worldToCell } from '../worldgen/coords';
+import { GRID } from '../worldgen/types';
 import type { SimEvent } from './events';
 import type { GameState, Realm, RealmId } from './state';
 import { routePath } from './systems/armies';
+
+/** Nearest navgrid cell to a world position, as routePath arguments. */
+function nearestCell(x: number, z: number): [number, number] {
+  const { i, j } = worldToCell(x, z);
+  return [i, j];
+}
 
 export interface Vec2 {
   x: number;
@@ -16,6 +25,8 @@ export interface Vec2 {
 export type Objective =
   | { kind: 'attackCamp'; camp: number }
   | { kind: 'attackSettlement'; settlement: number } // M5
+  | { kind: 'moveTo'; i: number; j: number } // M7a
+  | { kind: 'attackArmy'; army: number } // M7a
   | { kind: 'returnHome' };
 
 /**
@@ -377,6 +388,38 @@ export function applyCommands(state: GameState, issued: IssuedCommand[], out: Si
           army.phase = 'marching';
           routePath(state, army, site.i, site.j);
           out.push({ kind: 'armyMarchedOnSettlement', army: army.id, settlement: target.id });
+        } else if (cmd.objective.kind === 'moveTo') {
+          const { i, j } = cmd.objective;
+          if (!Number.isInteger(i) || !Number.isInteger(j) || i < 0 || j < 0 || i >= GRID || j >= GRID) {
+            reject(out, realm, 'no such place');
+            break;
+          }
+          if (!Number.isFinite(state.world.navCost[hidx(i, j)])) {
+            reject(out, realm, 'an army cannot march into the sea');
+            break;
+          }
+          army.objective = { kind: 'moveTo', i, j };
+          army.phase = 'marching';
+          routePath(state, army, i, j);
+        } else if (cmd.objective.kind === 'attackArmy') {
+          const target = state.armies.find((a) => a.id === (cmd.objective as { army: number }).army);
+          if (!target) {
+            reject(out, realm, 'that host is no more');
+            break;
+          }
+          if (target.ownerRealm === realm) {
+            reject(out, realm, 'that army is your own');
+            break;
+          }
+          const r = state.realms[realm];
+          const hostile = target.ownerRealm === WILD_REALM || r.atWarWith.includes(target.ownerRealm);
+          if (!hostile) {
+            reject(out, realm, `you are not at war with ${state.realms[target.ownerRealm]?.name ?? 'them'}`);
+            break;
+          }
+          army.objective = { kind: 'attackArmy', army: target.id };
+          army.phase = 'marching';
+          routePath(state, army, ...nearestCell(target.x, target.z));
         } else {
           army.objective = { kind: 'returnHome' };
           army.phase = 'returning';

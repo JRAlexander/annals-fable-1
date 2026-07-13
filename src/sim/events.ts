@@ -33,6 +33,9 @@ export type SimEvent =
   | { kind: 'settlementCaptured'; settlement: number; by: RealmId; from: RealmId }
   | { kind: 'siegeRepelled'; army: number; settlement: number }
   | { kind: 'commandRejected'; realm: RealmId; reason: string }
+  // M7a: field battles
+  | { kind: 'armiesEngaged'; a: number; b: number }
+  | { kind: 'fieldBattleWon'; winner: number; loser: number }
   // M6: threats and endings
   | { kind: 'raidSpawned'; camp: number; settlement: number; strength: number }
   | { kind: 'settlementRaided'; settlement: number; plunder: number }
