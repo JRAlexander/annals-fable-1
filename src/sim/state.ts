@@ -9,10 +9,11 @@ import {
   WORK_RATIO,
   type WorkJob,
 } from '../content/economy';
-import type { AgeId, BuildingId, ResourceId, TechId } from '../content/schema';
+import type { AgeId, BuildingId, ResourceId, TechId, UnitId } from '../content/schema';
 import { clamp } from '../core/math';
 import { hidx } from '../worldgen/coords';
 import type { WorldData } from '../worldgen/types';
+// (BanditCamp defenders reference unit ids as data — no UNITS import needed here)
 import { Biome, GRID, WORLD_SIZE } from '../worldgen/types';
 
 export type RealmId = number;
@@ -53,6 +54,10 @@ export interface SimSettlement {
   buildQueue: ConstructionJob[];
   /** Completed buildings by id. */
   buildings: Partial<Record<BuildingId, number>>;
+  /** FIFO unit training queue; costs and pop are paid at queue time. */
+  trainQueue: TrainingJob[];
+  /** Trained units stationed here, awaiting army formation. */
+  garrison: UnitCounts;
 }
 
 export interface ConstructionJob {
@@ -61,12 +66,63 @@ export interface ConstructionJob {
   progress: number;
 }
 
+export interface TrainingJob {
+  unit: UnitId;
+  /** Units still to produce in this job (one at a time off the head). */
+  remaining: number;
+  progress: number;
+}
+
+export type UnitCounts = Partial<Record<UnitId, number>>;
+
+export type ArmyObjective =
+  | { kind: 'attackCamp'; camp: number }
+  | { kind: 'attackSettlement'; settlement: number } // typed for M5
+  | { kind: 'returnHome' };
+
+/**
+ * Ruler-mode armies are typed-count bundles — the M7 RTS layer will add a
+ * per-unit store that feeds from these counts without reshaping commands.
+ */
+export interface Army {
+  id: number;
+  ownerRealm: RealmId;
+  /** Settlement it was formed at; survivors disband back into its garrison. */
+  home: number;
+  units: UnitCounts;
+  x: number;
+  z: number;
+  /** Previous tick's position — the renderer interpolates between the two. */
+  prevX: number;
+  prevZ: number;
+  path: [number, number][];
+  pathIdx: number;
+  /** Fractional progress through the current path cell. */
+  cellProgress: number;
+  objective: ArmyObjective | null;
+  phase: 'idle' | 'marching' | 'fighting' | 'returning';
+  /** Strength when the current battle began — the rout threshold reference. */
+  battleStartStrength: number;
+}
+
+/** Live bandit camp state (site geography lives in WorldData.camps). */
+export interface BanditCamp {
+  id: number;
+  defenders: UnitCounts;
+  fortHp: number;
+  loot: number;
+  cleared: boolean;
+}
+
 export interface GameState {
   seed: number;
   /** Absolute tick; TICKS_PER_DAY ticks = 1 game day. */
   tick: number;
   realms: Realm[]; // index === id
   settlements: SimSettlement[]; // index === id
+  armies: Army[];
+  nextArmyId: number;
+  camps: BanditCamp[]; // index === WorldData.camps id
   /** Static geography — regenerable from seed, EXCLUDED from the state hash. */
   world: WorldData;
 }
@@ -140,8 +196,28 @@ export function initGameState(world: WorldData): GameState {
       siteCapacity,
       buildQueue: [],
       buildings: {},
+      trainQueue: [],
+      garrison: {},
     };
   });
 
-  return { seed: world.seed, tick: 0, realms: [realm], settlements, world };
+  // camps: defenders scale with distance from the capital (rng-free, from geography)
+  const cap = world.capital;
+  const camps: BanditCamp[] = world.camps.map((c) => {
+    const dist = Math.hypot(c.i - cap.i, c.j - cap.j);
+    const strength = Math.round(6 + dist * 0.35);
+    return {
+      id: c.id,
+      defenders: {
+        militia: strength,
+        spearman: Math.floor(strength / 3),
+        archer: Math.floor(strength / 4),
+      },
+      fortHp: 150 + Math.round(dist * 4),
+      loot: 150 + Math.round(dist * 8),
+      cleared: false,
+    };
+  });
+
+  return { seed: world.seed, tick: 0, realms: [realm], settlements, armies: [], nextArmyId: 0, camps, world };
 }

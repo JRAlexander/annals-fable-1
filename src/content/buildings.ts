@@ -127,6 +127,36 @@ export const BUILDINGS: Record<BuildingId, BuildingDef> = {
     functions: [{ kind: 'defense', garrison: 20, attack: 8 }],
     footprint: { w: 3, d: 3 },
   },
+  barracks: {
+    id: 'barracks',
+    name: 'Barracks',
+    cost: { wood: 60 },
+    buildTime: 90,
+    hp: 350,
+    requiresAge: 'founding',
+    functions: [{ kind: 'training', units: ['militia', 'spearman', 'swordsman', 'ram'] }],
+    footprint: { w: 3, d: 3 },
+  },
+  archeryRange: {
+    id: 'archeryRange',
+    name: 'Archery Range',
+    cost: { wood: 80 },
+    buildTime: 100,
+    hp: 300,
+    requiresAge: 'flowering',
+    functions: [{ kind: 'training', units: ['archer', 'skirmisher'] }],
+    footprint: { w: 3, d: 2 },
+  },
+  stable: {
+    id: 'stable',
+    name: 'Stable',
+    cost: { wood: 100, gold: 20 },
+    buildTime: 110,
+    hp: 320,
+    requiresAge: 'flowering',
+    functions: [{ kind: 'training', units: ['lightCavalry', 'knight'] }],
+    footprint: { w: 3, d: 2 },
+  },
 };
 
 export const BUILDING_IDS: readonly BuildingId[] = Object.keys(BUILDINGS);

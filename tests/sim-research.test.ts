@@ -41,8 +41,10 @@ describe('research', () => {
   });
 
   it('every tech measurably changes some resolved stat (the M3 done-criterion)', () => {
+    // one world for all techs — a fresh worldgen per tech blows CI's test timeout
+    const sim = freshSim(1234);
     for (const tech of Object.values(TECHS)) {
-      const sim = freshSim(1234);
+      sim.state.realms[0].researchedTechs = [];
       const ctx = { state: sim.state, realm: 0 };
       const queries = [
         ...WORK_JOBS.map((j) => ({
@@ -56,6 +58,10 @@ describe('research', () => {
         { label: 'build', q: { stat: 'buildSpeed' as const }, base: 1 },
         { label: 'research', q: { stat: 'researchSpeed' as const }, base: 1 },
         { label: 'wallHp', q: { stat: 'wallHp' as const }, base: 100 },
+        ...(['infantry', 'cavalry', 'ranged', 'siege'] as const).flatMap((tag) => [
+          { label: `atk:${tag}`, q: { stat: 'unitAttack' as const, unitTag: tag }, base: 8 },
+          { label: `arm:${tag}`, q: { stat: 'unitArmor' as const, unitTag: tag }, base: 2 },
+        ]),
       ];
       const before = queries.map((q) => resolveStat(ctx, q.base, q.q));
       sim.state.realms[0].researchedTechs.push(tech.id);
