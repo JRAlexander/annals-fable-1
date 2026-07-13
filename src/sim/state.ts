@@ -1,0 +1,123 @@
+import {
+  HOUSING_BASE,
+  SLOTS_PER_CELL,
+  STARTING_STOCK,
+  TRADE_BASE,
+  TRADE_HARBOR_BONUS,
+  TRADE_PER_ROAD,
+  WORK_JOBS,
+  WORK_RATIO,
+  type WorkJob,
+} from '../content/economy';
+import type { ResourceId } from '../content/schema';
+import { clamp } from '../core/math';
+import { hidx } from '../worldgen/coords';
+import type { WorldData } from '../worldgen/types';
+import { Biome, GRID, WORLD_SIZE } from '../worldgen/types';
+
+export type RealmId = number;
+
+export interface Realm {
+  id: RealmId; // player = 0; rival realms arrive in M5
+  name: string;
+  isPlayer: boolean;
+  culture: string | null; // set at culture select (M5)
+  stock: Record<ResourceId, number>; // shared AoE-style stockpile
+  storageCap: Record<ResourceId, number>; // derived cache, recomputed by the storage system
+}
+
+export interface SimSettlement {
+  /** === WorldData.settlements[id].id — static site data (name/tier/position) lives there. */
+  id: number;
+  ownerRealm: RealmId;
+  /** Float internally; UI floors it. Live value — SettlementSite.pop stays the initial. */
+  pop: number;
+  /** Derived cache (housing), recomputed daily via resolveStat. */
+  popCap: number;
+  /** Fraction of pop that works. M2 may expose this to the player. */
+  workRatio: number;
+  /** Allocation weights, normalized at use. M2's sliders write these via command. */
+  alloc: Record<WorkJob, number>;
+  /** Max workers per job from surrounding terrain. M2 buildings ADD to this. */
+  siteCapacity: Record<WorkJob, number>;
+}
+
+export interface GameState {
+  seed: number;
+  /** Absolute tick; TICKS_PER_DAY ticks = 1 game day. */
+  tick: number;
+  realms: Realm[]; // index === id
+  settlements: SimSettlement[]; // index === id
+  /** Static geography — regenerable from seed, EXCLUDED from the state hash. */
+  world: WorldData;
+}
+
+/** Worker slots a settlement's surroundings provide, from a biome scan. */
+function scanSiteCapacity(world: WorldData, siteIdx: number): Record<WorkJob, number> {
+  const s = world.settlements[siteIdx];
+  const cellW = WORLD_SIZE / (GRID - 1);
+  const r = Math.min(10, Math.ceil(s.radius / cellW) + 3);
+  const cap: Record<WorkJob, number> = { farm: 0, forest: 0, quarry: 0, trade: 0 };
+  for (let dj = -r; dj <= r; dj++) {
+    for (let di = -r; di <= r; di++) {
+      const i = clamp(s.i + di, 0, GRID - 1);
+      const j = clamp(s.j + dj, 0, GRID - 1);
+      switch (world.biome[hidx(i, j)]) {
+        case Biome.Farmland:
+          cap.farm += SLOTS_PER_CELL.farmland;
+          break;
+        case Biome.Meadow:
+          cap.farm += SLOTS_PER_CELL.meadow;
+          break;
+        case Biome.Deciduous:
+          cap.forest += SLOTS_PER_CELL.deciduous;
+          break;
+        case Biome.Pine:
+          cap.forest += SLOTS_PER_CELL.pine;
+          break;
+        case Biome.Rock:
+          cap.quarry += SLOTS_PER_CELL.rock;
+          break;
+        default:
+          break;
+      }
+    }
+  }
+  const roads = world.roads.filter((rd) => rd.a === s.id || rd.b === s.id).length;
+  cap.trade = TRADE_BASE[s.tier] + (s.isHarbor ? TRADE_HARBOR_BONUS : 0) + roads * TRADE_PER_ROAD;
+  return cap;
+}
+
+/**
+ * Fully derived from WorldData — draws NO rng, so `initGameState(world)` is
+ * reproducible from the seed alone.
+ */
+export function initGameState(world: WorldData): GameState {
+  const realm: Realm = {
+    id: 0,
+    name: `The Realm of ${world.capital.name}`,
+    isPlayer: true,
+    culture: null,
+    stock: { ...STARTING_STOCK },
+    storageCap: { food: 0, wood: 0, stone: 0, gold: 0 }, // filled by the storage system on tick 0
+  };
+
+  const settlements = world.settlements.map((site, idx): SimSettlement => {
+    const siteCapacity = scanSiteCapacity(world, idx);
+    // default allocation proportional to what the land offers — the M1 auto-assign
+    const total = WORK_JOBS.reduce((t, job) => t + siteCapacity[job], 0) || 1;
+    const alloc = { farm: 0, forest: 0, quarry: 0, trade: 0 };
+    for (const job of WORK_JOBS) alloc[job] = siteCapacity[job] / total;
+    return {
+      id: site.id,
+      ownerRealm: 0,
+      pop: site.pop,
+      popCap: HOUSING_BASE[site.tier],
+      workRatio: WORK_RATIO,
+      alloc,
+      siteCapacity,
+    };
+  });
+
+  return { seed: world.seed, tick: 0, realms: [realm], settlements, world };
+}

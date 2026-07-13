@@ -25,6 +25,7 @@ export type Stat =
   | 'unitArmor'
   | 'unitSpeed'
   | 'housingCap'
+  | 'storageCap'
   | 'wallHp'
   | 'tradeIncome'
   | 'popGrowth'
