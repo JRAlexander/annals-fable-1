@@ -1,11 +1,16 @@
 import * as THREE from 'three';
+import { BUILDINGS } from '../content/buildings';
+import type { BuildingId } from '../content/schema';
 import type { ArmiesHandle } from '../render/armiesMesh';
+import { archGeo } from '../render/buildingsMesh';
+import { BUILDING_ARCH } from '../render/constructedMesh';
 import type { SceneHandle } from '../render/scene';
 import { totalUnits } from '../sim/combat';
 import type { Command } from '../sim/commands';
 import type { GameState } from '../sim/state';
-import { terrainHeight, worldToCell } from '../worldgen/coords';
+import { hidx, terrainHeight, worldToCell } from '../worldgen/coords';
 import type { WorldData } from '../worldgen/types';
+import { GRID, WORLD_SIZE } from '../worldgen/types';
 
 const DRAG_THRESHOLD_PX = 5;
 const CAMP_PICK_RADIUS = 80;
@@ -13,6 +18,8 @@ const CAMP_PICK_RADIUS = 80;
 export interface InputHandle {
   /** Currently selected army ids (player-owned; pruned as armies die). */
   readonly selection: Set<number>;
+  /** Arm (or disarm with null) free-placement mode for a building (M7b). */
+  setPlacement(building: BuildingId | null): void;
   dispose(): void;
 }
 
@@ -44,6 +51,73 @@ export function createInput(opts: {
   const selection = new Set<number>();
   const raycaster = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
+
+  // --- free placement mode (M7b): a ghost follows the ground until placed ---
+  let placing: BuildingId | null = null;
+  let ghost: THREE.Mesh | null = null;
+  let ghostValid = false;
+  const ghostMaterial = new THREE.MeshLambertMaterial({ transparent: true, opacity: 0.6 });
+
+  /** Mirror of the sim's placement validation, for live ghost feedback. */
+  const placementValid = (building: BuildingId, x: number, z: number): boolean => {
+    const { i, j } = worldToCell(x, z);
+    if (i < 0 || j < 0 || i >= GRID || j >= GRID) return false;
+    if (!Number.isFinite(world.navCost[hidx(i, j)])) return false;
+    const def = BUILDINGS[building];
+    if (!def) return false;
+    let inInfluence = false;
+    for (const s of state.settlements) {
+      if (s.ownerRealm !== 0) continue;
+      const site = world.settlements[s.id];
+      const d = Math.hypot(site.x - x, site.z - z);
+      if (d <= site.radius * 2.5) inInfluence = true;
+      if (d < site.radius * 0.9) return false; // the town core is built up
+    }
+    if (!inInfluence) return false;
+    const cellW = WORLD_SIZE / (GRID - 1);
+    const half = (fp: { w: number; d: number }) => (Math.max(fp.w, fp.d) * cellW) / 4;
+    for (const s of state.settlements) {
+      if (s.ownerRealm !== 0) continue;
+      const spots = [
+        ...s.placed.map((pb) => ({
+          x: pb.x,
+          z: pb.z,
+          fp: BUILDINGS[pb.building]?.footprint ?? { w: 1, d: 1 },
+        })),
+        ...s.buildQueue
+          .filter((jb) => jb.at)
+          .map((jb) => ({
+            x: (jb.at as { x: number; z: number }).x,
+            z: (jb.at as { x: number; z: number }).z,
+            fp: BUILDINGS[jb.building]?.footprint ?? { w: 1, d: 1 },
+          })),
+      ];
+      if (spots.some((pb) => Math.hypot(pb.x - x, pb.z - z) < half(pb.fp) + half(def.footprint)))
+        return false;
+    }
+    return true;
+  };
+
+  const clearGhost = () => {
+    if (ghost) scene.scene.remove(ghost);
+    ghost = null;
+    placing = null;
+  };
+
+  const setPlacement = (building: BuildingId | null): void => {
+    clearGhost();
+    if (!building) return;
+    const arch = BUILDING_ARCH[building];
+    if (!arch) return;
+    placing = building;
+    ghost = new THREE.Mesh(archGeo(arch), ghostMaterial);
+    ghost.name = 'placement-ghost';
+    const sc = 1.6 * (building === 'wonder' ? 3.2 : 1);
+    ghost.scale.set(sc, sc, sc);
+    ghost.raycast = () => {};
+    ghost.visible = false;
+    scene.scene.add(ghost);
+  };
 
   const setSelection = (ids: number[]) => {
     selection.clear();
@@ -97,6 +171,17 @@ export function createInput(opts: {
   };
 
   const onPointerMove = (ev: PointerEvent) => {
+    if (placing && ghost) {
+      const point = castGround(ev);
+      if (point) {
+        ghost.visible = true;
+        ghost.position.set(point.x, terrainHeight(world.heightmap, point.x, point.z), point.z);
+        ghostValid = placementValid(placing, point.x, point.z);
+        ghostMaterial.color.set(ghostValid ? 0x67c96a : 0xc94a3a);
+      } else {
+        ghost.visible = false;
+      }
+    }
     if (!dragging) return;
     if (Math.hypot(ev.clientX - downX, ev.clientY - downY) >= DRAG_THRESHOLD_PX) {
       boxEl.style.display = 'block';
@@ -108,6 +193,15 @@ export function createInput(opts: {
   const onPointerUp = (ev: PointerEvent) => {
     if (ev.button !== 0 || !dragging) return;
     dragging = false;
+    if (placing) {
+      boxEl.style.display = 'none';
+      const point = castGround(ev);
+      if (point && ghostValid) {
+        enqueue({ kind: 'placeBuilding', building: placing, at: { x: point.x, z: point.z } });
+        clearGhost(); // one placement per arming — click the card again for more
+      }
+      return;
+    }
     const wasBox = boxEl.style.display === 'block';
     boxEl.style.display = 'none';
     if (wasBox) {
@@ -144,6 +238,10 @@ export function createInput(opts: {
   // --- right button: order the selection ---
   const onContextMenu = (ev: MouseEvent) => {
     ev.preventDefault();
+    if (placing) {
+      clearGhost();
+      return;
+    }
     if (selection.size === 0) return;
     const targets = [...selection].filter((id) =>
       state.armies.some((a) => a.id === id && a.ownerRealm === 0),
@@ -199,7 +297,10 @@ export function createInput(opts: {
   };
 
   const onKeyDown = (ev: KeyboardEvent) => {
-    if (ev.code === 'Escape') setSelection([]);
+    if (ev.code === 'Escape') {
+      if (placing) clearGhost();
+      else setSelection([]);
+    }
   };
 
   canvas.addEventListener('pointerdown', onPointerDown);
@@ -210,6 +311,7 @@ export function createInput(opts: {
 
   return {
     selection,
+    setPlacement,
     dispose() {
       canvas.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('pointermove', onPointerMove);

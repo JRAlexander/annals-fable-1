@@ -1,7 +1,7 @@
 import { AGES, ageIndex } from '../content/ages';
 import { BUILDING_IDS, BUILDINGS } from '../content/buildings';
 import { JOB_RESOURCE, WORK_JOBS, type WorkJob } from '../content/economy';
-import type { ResourceId } from '../content/schema';
+import type { BuildingId, ResourceId } from '../content/schema';
 import { TECHS } from '../content/techs';
 import { jobCapacity } from '../sim/buildings';
 import type { Command } from '../sim/commands';
@@ -29,13 +29,18 @@ export interface BuildMenu {
  * allocation. All input funnels into enqueue() — the command queue is the
  * only path into the sim.
  */
-export function createBuildMenu(el: HTMLElement, enqueue: (cmd: Command) => void): BuildMenu {
+export function createBuildMenu(
+  el: HTMLElement,
+  enqueue: (cmd: Command) => void,
+  /** M7b: when provided, card clicks arm map placement instead of auto-queueing. */
+  onPlace?: (building: BuildingId) => void,
+): BuildMenu {
   el.innerHTML = `
     <div class="bm-head">
       <select id="bm-settlement"></select>
       <span id="bm-pop"></span>
     </div>
-    <div class="bm-section">Construct</div>
+    <div class="bm-section">Construct <i class="bm-hint">click a card, then the map</i></div>
     <div id="bm-buildings"></div>
     <div class="bm-section">Building queue</div>
     <div id="bm-queue" class="bm-queue"><i>empty</i></div>
@@ -61,7 +66,11 @@ export function createBuildMenu(el: HTMLElement, enqueue: (cmd: Command) => void
     const b = document.createElement('button');
     b.className = 'bm-build';
     b.innerHTML = `<b>${def.name}</b><span>${costText(def.cost)}</span>`;
-    b.addEventListener('click', () => enqueue({ kind: 'queueBuilding', settlement: selected, building: id }));
+    b.addEventListener('click', () => {
+      if (onPlace)
+        onPlace(id); // pick the ground on the map (M7b)
+      else enqueue({ kind: 'queueBuilding', settlement: selected, building: id });
+    });
     buildingsEl.appendChild(b);
     buttons.set(id, { btn: b, sub: b.querySelector('span') as HTMLElement });
   }

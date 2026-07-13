@@ -25,6 +25,8 @@ export function constructionSystem(state: GameState, out: SimEvent[]): void {
     if (job.progress >= def.buildTime) {
       s.buildQueue.shift();
       s.buildings[def.id] = (s.buildings[def.id] ?? 0) + 1;
+      // a player-placed building keeps its chosen ground (M7b)
+      if (job.at) s.placed.push({ building: def.id, x: job.at.x, z: job.at.z });
       out.push({ kind: 'buildingCompleted', settlement: s.id, building: def.id });
     }
   }

@@ -70,6 +70,22 @@ The HUD's goal line keeps the objectives in view for your first year.
 | **Bottom left** | The **chronicle** — your realm's history, written as it happens |
 | **Center toasts** | Completions and rejections (a red toast tells you *why* an order failed) |
 
+## Building on the map (free placement)
+
+Click a card in the **Construct** panel, then click the ground: a ghost of the
+building follows your cursor — **green** where it may stand, **red** where it
+may not (water, another realm's land, too far from your settlements, on top of
+something, or inside the town core). Left-click places it; **Esc** or
+right-click cancels. Placed buildings rise exactly where you put them.
+
+## Fog of war
+
+You see what your realm sees: the land around your settlements and armies.
+Everything else is dark until explored, and once-seen ground dims when your
+sight leaves — enemy armies move unseen out there. March armies to scout,
+garrison the frontier, and remember: the raiders you cannot see are still
+coming. (The chronicle's annalist, as ever, knows all — read it.)
+
 ## Commanding on the map (RTS controls)
 
 - **Left click** an army banner to select it; **left-drag** a box to select several; **Shift-click** adds; **Esc** or clicking empty ground clears.
