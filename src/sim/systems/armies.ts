@@ -3,15 +3,15 @@ import type { ResourceId, UnitId } from '../../content/schema';
 import { DRAGON_HOARD, RAID_PLUNDER, RAID_POP_MULT, WILD_REALM } from '../../content/threats';
 import { UNITS } from '../../content/units';
 import { cellPos, hidx, worldToCell } from '../../worldgen/coords';
-import { applyLosses, resolveRound, totalUnits } from '../combat';
+import { totalUnits } from '../combat';
 import type { SimEvent } from '../events';
 import { resolveStat } from '../modifiers';
 import { findPath } from '../pathfind';
-import type { Army, GameState } from '../state';
-import type { SimStreams } from '../tick';
+import type { Army, GameState, SimSettlement } from '../state';
 import { dateOf } from '../time';
-import { reconcileUnits, steerUnits } from '../unitStore';
+import { musterDefenders, reconcileUnits, steerUnits } from '../unitStore';
 import { dragonTarget } from './threats';
+import { type FortState, fightUnits } from './unitCombat';
 
 /** Base march rate in path-cells per tick, scaled by unit speed and terrain. */
 const MARCH_RATE = 0.35;
@@ -70,20 +70,41 @@ function detectEngagements(state: GameState, out: SimEvent[]): void {
   }
 }
 
-/** After a field battle: pick the march back up, or hold the ground. */
-function resumeAfterBattle(state: GameState, army: Army): void {
+/**
+ * After a battle: defenders go back behind their walls (the army dissolves —
+ * returns false), field armies pick their march back up (returns true).
+ */
+function resumeAfterBattle(state: GameState, army: Army): boolean {
   army.engagedWith = undefined;
+  if (army.defending) {
+    if (army.defending.camp !== undefined) {
+      const camp = state.camps[army.defending.camp];
+      if (camp && !camp.cleared) {
+        for (const [t, n] of Object.entries(army.units)) {
+          camp.defenders[t] = (camp.defenders[t] ?? 0) + (n ?? 0);
+        }
+      }
+    } else if (army.defending.settlement !== undefined) {
+      const s = state.settlements[army.defending.settlement];
+      if (s) {
+        for (const [t, n] of Object.entries(army.units)) {
+          s.garrison[t] = (s.garrison[t] ?? 0) + (n ?? 0);
+        }
+      }
+    }
+    return false; // the defender army dissolves; its soldiers are home
+  }
   const o = army.objective;
   if (!o || o.kind === 'moveTo') {
     // holding orders: finish the walk if any remains, else stand
     army.phase = army.pathIdx < army.path.length - 1 ? 'marching' : 'idle';
-    return;
+    return true;
   }
   if (o.kind === 'returnHome') {
     army.phase = 'returning';
     const home = state.world.settlements[army.home];
     routePath(state, army, home.i, home.j);
-    return;
+    return true;
   }
   // re-route to the standing objective; arrival transitions re-fire there
   army.phase = 'marching';
@@ -103,13 +124,71 @@ function resumeAfterBattle(state: GameState, army: Army): void {
       army.phase = 'idle';
     }
   }
+  return true;
+}
+
+/** Send an army home after its work is done. */
+function goHomeward(state: GameState, army: Army): void {
+  army.objective = { kind: 'returnHome' };
+  army.phase = 'returning';
+  const home = state.world.settlements[army.home];
+  if (home) routePath(state, army, home.i, home.j);
+}
+
+/** The camp falls: cleared, looted, the victor turns for home. */
+function campFalls(state: GameState, army: Army, campId: number, out: SimEvent[]): void {
+  const camp = state.camps[campId];
+  if (!camp || camp.cleared) return;
+  camp.cleared = true;
+  camp.defenders = {};
+  if (state.realms[army.ownerRealm]) state.realms[army.ownerRealm].stock.gold += camp.loot;
+  out.push({ kind: 'campCleared', army: army.id, camp: camp.id, loot: camp.loot });
+  goHomeward(state, army);
+}
+
+/**
+ * The town falls to `army`. Wild attackers plunder and move on (returns true
+ * when the band dissolves); realm attackers capture. Mirrors the M6 rules.
+ */
+function settlementFalls(state: GameState, army: Army, target: SimSettlement, out: SimEvent[]): boolean {
+  if (army.ownerRealm === WILD_REALM) {
+    const owner = state.realms[target.ownerRealm];
+    let plunder = 0;
+    for (const res of Object.keys(owner.stock) as ResourceId[]) {
+      const taken = Math.floor(owner.stock[res] * RAID_PLUNDER);
+      owner.stock[res] -= taken;
+      plunder += taken;
+    }
+    target.pop = Math.floor(target.pop * RAID_POP_MULT);
+    out.push({ kind: 'settlementRaided', settlement: target.id, plunder });
+    if ((army.units.dragon ?? 0) > 0) {
+      const next = dragonTarget(state, target.id);
+      army.engagedWith = undefined;
+      army.objective = { kind: 'attackSettlement', settlement: next };
+      army.phase = 'marching';
+      army.siegeDamage = 0;
+      const site = state.world.settlements[next];
+      routePath(state, army, site.i, site.j);
+      return false; // the dragon is never sated
+    }
+    return true; // raider bands dissolve back into the wilds
+  }
+  const from = target.ownerRealm;
+  target.ownerRealm = army.ownerRealm;
+  target.pop = Math.floor(target.pop * 0.9);
+  target.garrison = {};
+  target.trainQueue = [];
+  out.push({ kind: 'settlementCaptured', settlement: target.id, by: army.ownerRealm, from });
+  army.engagedWith = undefined;
+  goHomeward(state, army);
+  return false;
 }
 
 /**
  * Marching, arrival transitions, and battles (one round per tick while
  * fighting). Uses the combat stream — its draws are part of the timeline.
  */
-export function armiesSystem(state: GameState, out: SimEvent[], streams: SimStreams): void {
+export function armiesSystem(state: GameState, out: SimEvent[]): void {
   detectEngagements(state, out);
   const survivors: Army[] = [];
   for (const army of state.armies) {
@@ -122,9 +201,17 @@ export function armiesSystem(state: GameState, out: SimEvent[], streams: SimStre
     }
 
     switch (army.phase) {
-      case 'idle':
+      case 'idle': {
+        // stale siege objectives (target fell to someone else) route home
+        const o = army.objective;
+        if (o?.kind === 'attackCamp' && (state.camps[o.camp]?.cleared ?? true)) goHomeward(state, army);
+        else if (o?.kind === 'attackSettlement') {
+          const t = state.settlements[o.settlement];
+          if (!t || t.ownerRealm === army.ownerRealm) goHomeward(state, army);
+        }
         survivors.push(army);
         break;
+      }
 
       case 'marching':
       case 'returning': {
@@ -186,14 +273,21 @@ export function armiesSystem(state: GameState, out: SimEvent[], streams: SimStre
           if (army.objective.kind === 'attackCamp') {
             const camp = state.camps[army.objective.camp];
             if (!camp || camp.cleared) {
-              army.objective = { kind: 'returnHome' };
-              army.phase = 'returning';
-              const home = state.world.settlements[army.home];
-              routePath(state, army, home.i, home.j);
+              goHomeward(state, army);
             } else {
-              army.phase = 'fighting';
-              army.battleStartStrength = totalUnits(army.units);
               out.push({ kind: 'battleStarted', army: army.id, camp: camp.id });
+              const defended = state.armies.some((x) => x.defending?.camp === camp.id);
+              if (!defended && totalUnits(camp.defenders) > 0) {
+                // the bandits pour out of the palisade to meet us (M8b)
+                const site = state.world.camps[camp.id];
+                musterDefenders(state, WILD_REALM, camp.defenders, site.x, site.z, { camp: camp.id });
+                camp.defenders = {};
+                army.phase = 'idle'; // the engagement pass locks the pair next tick
+              } else if (!defended) {
+                campFalls(state, army, camp.id, out); // nobody home
+              } else {
+                army.phase = 'idle'; // wait our turn against the defenders
+              }
             }
           } else if (army.objective.kind === 'attackSettlement') {
             const target = state.settlements[army.objective.settlement];
@@ -204,8 +298,6 @@ export function armiesSystem(state: GameState, out: SimEvent[], streams: SimStre
               const home = state.world.settlements[army.home];
               routePath(state, army, home.i, home.j);
             } else {
-              army.phase = 'fighting';
-              army.battleStartStrength = totalUnits(army.units);
               // the town raises a levy of militia from its people — but a
               // people bled by repeated alarms cannot muster twice in a season
               const day = dateOf(state.tick).day;
@@ -217,6 +309,23 @@ export function armiesSystem(state: GameState, out: SimEvent[], streams: SimStre
                 out.push({ kind: 'levyRaised', settlement: target.id, count: levy });
               }
               out.push({ kind: 'siegeStarted', army: army.id, settlement: target.id });
+              const defended = state.armies.some((x) => x.defending?.settlement === target.id);
+              if (!defended && totalUnits(target.garrison) > 0) {
+                // the garrison mans the walls as a real fighting force (M8b)
+                const site = state.world.settlements[target.id];
+                musterDefenders(state, target.ownerRealm, target.garrison, site.x, site.z, {
+                  settlement: target.id,
+                });
+                target.garrison = {};
+                army.phase = 'idle';
+              } else if (!defended) {
+                // an undefended town falls at once
+                if (settlementFalls(state, army, target, out)) {
+                  break; // the wild band melts away — the army is no more
+                }
+              } else {
+                army.phase = 'idle';
+              }
             }
           }
         }
@@ -226,60 +335,11 @@ export function armiesSystem(state: GameState, out: SimEvent[], streams: SimStre
 
       case 'fighting': {
         if (army.engagedWith !== undefined) {
-          fightField(state, army, out, streams, survivors);
+          fightField(state, army, out, survivors);
           break;
         }
-        if (army.objective?.kind === 'attackSettlement') {
-          fightSettlement(state, army, out, streams, survivors);
-          break;
-        }
-        const campId = army.objective?.kind === 'attackCamp' ? army.objective.camp : -1;
-        const camp = state.camps[campId];
-        if (!camp || camp.cleared) {
-          army.phase = 'returning';
-          army.objective = { kind: 'returnHome' };
-          const home = state.world.settlements[army.home];
-          routePath(state, army, home.i, home.j);
-          survivors.push(army);
-          break;
-        }
-        const round = resolveRound(
-          army.units,
-          camp.defenders,
-          { state, realm: army.ownerRealm },
-          { state, realm: -1 }, // bandits have no realm: no techs, no buildings
-          streams.combat,
-          camp.fortHp,
-        );
-        camp.fortHp = Math.max(0, camp.fortHp - round.fortDamage);
-        applyLosses(army.units, round.attackerLosses);
-        applyLosses(camp.defenders, round.defenderLosses);
-
-        const myStrength = totalUnits(army.units);
-        const start = army.battleStartStrength || myStrength;
-        // dead defenders = cleared camp; the palisade only shields its garrison
-        if (totalUnits(camp.defenders) <= 0) {
-          camp.cleared = true;
-          state.realms[army.ownerRealm].stock.gold += camp.loot;
-          out.push({ kind: 'campCleared', army: army.id, camp: camp.id, loot: camp.loot });
-          army.phase = 'returning';
-          army.objective = { kind: 'returnHome' };
-          const home = state.world.settlements[army.home];
-          routePath(state, army, home.i, home.j);
-          survivors.push(army);
-        } else if (myStrength <= 0) {
-          out.push({ kind: 'battleLost', army: army.id, camp: camp.id });
-          // army annihilated — entity dissolves
-        } else if (myStrength < start * 0.3) {
-          out.push({ kind: 'armyRouted', army: army.id, camp: camp.id });
-          army.phase = 'returning';
-          army.objective = { kind: 'returnHome' };
-          const home = state.world.settlements[army.home];
-          routePath(state, army, home.i, home.j);
-          survivors.push(army);
-        } else {
-          survivors.push(army);
-        }
+        // battle over (or never begun): defenders go home, field armies resume
+        if (resumeAfterBattle(state, army)) survivors.push(army);
         break;
       }
       default:
@@ -298,136 +358,117 @@ export function armiesSystem(state: GameState, out: SimEvent[], streams: SimStre
   steerUnits(state);
 }
 
-/** Siege of an enemy settlement: garrison (with its one-time levy) behind walls/keep. */
-function fightSettlement(
-  state: GameState,
-  army: Army,
-  out: SimEvent[],
-  streams: SimStreams,
-  survivors: Army[],
-): void {
-  const targetId = army.objective?.kind === 'attackSettlement' ? army.objective.settlement : -1;
-  const target = state.settlements[targetId];
-  const goHome = () => {
-    army.phase = 'returning';
-    army.objective = { kind: 'returnHome' };
-    const home = state.world.settlements[army.home];
-    routePath(state, army, home.i, home.j);
-    survivors.push(army);
-  };
-  if (!target || target.ownerRealm === army.ownerRealm) {
-    goHome();
-    return;
-  }
-  const site = state.world.settlements[target.id];
-  const isDragon = (army.units.dragon ?? 0) > 0; // read BEFORE losses erase the corpse
-  const fortHp = site.walls * 200 + (target.buildings.keep ?? 0) * 1200 - (army.siegeDamage ?? 0);
-  const round = resolveRound(
-    army.units,
-    target.garrison,
-    { state, realm: army.ownerRealm },
-    { state, realm: target.ownerRealm, settlement: target.id },
-    streams.combat,
-    Math.max(0, fortHp),
-  );
-  army.siegeDamage = (army.siegeDamage ?? 0) + round.fortDamage;
-  applyLosses(army.units, round.attackerLosses);
-  applyLosses(target.garrison, round.defenderLosses);
-
-  const myStrength = totalUnits(army.units);
-  const start = army.battleStartStrength || myStrength;
-  const wild = army.ownerRealm === WILD_REALM;
-  if (totalUnits(target.garrison) <= 0) {
-    if (wild) {
-      // the wilds do not hold ground: plunder the stores, thin the people, move on
-      const owner = state.realms[target.ownerRealm];
-      let plunder = 0;
-      for (const res of Object.keys(owner.stock) as ResourceId[]) {
-        const taken = Math.floor(owner.stock[res] * RAID_PLUNDER);
-        owner.stock[res] -= taken;
-        plunder += taken;
-      }
-      target.pop = Math.floor(target.pop * RAID_POP_MULT);
-      out.push({ kind: 'settlementRaided', settlement: target.id, plunder });
-      if (isDragon) {
-        // the dragon is never sated — it seeks the next great town
-        const next = dragonTarget(state, target.id);
-        army.objective = { kind: 'attackSettlement', settlement: next };
-        army.phase = 'marching';
-        army.siegeDamage = 0;
-        const site = state.world.settlements[next];
-        routePath(state, army, site.i, site.j);
-        survivors.push(army);
-      }
-      // raider bands dissolve back into the wilds
-      return;
-    }
-    const from = target.ownerRealm;
-    target.ownerRealm = army.ownerRealm;
-    target.pop = Math.floor(target.pop * 0.9);
-    target.garrison = {};
-    target.trainQueue = [];
-    out.push({ kind: 'settlementCaptured', settlement: target.id, by: army.ownerRealm, from });
-    goHome();
-  } else if (myStrength <= 0) {
-    if (wild && isDragon) {
-      // the dragon lies slain beneath the walls — its hoard to the defenders
-      state.realms[target.ownerRealm].stock.gold += DRAGON_HOARD;
-      out.push({ kind: 'dragonSlain', realm: target.ownerRealm, hoard: DRAGON_HOARD });
-    } else {
-      out.push({ kind: 'siegeRepelled', army: army.id, settlement: target.id });
-    }
-  } else if (myStrength < start * 0.3) {
-    if (wild) return; // routed raiders melt away — no march home, no disband
-    out.push({ kind: 'armyRouted', army: army.id, camp: -1 });
-    goHome();
-  } else {
-    survivors.push(army);
-  }
-}
-
 /**
- * A field battle (M7a): two armies in the open, no fortifications, mutual
- * rounds. Runs once per pair per tick, from the LOWER army id — the higher id
- * simply holds while engaged. Wild losers melt away; realm losers flee home.
+ * One tick of an engaged battle (M8b): the per-unit engine resolves blows;
+ * this wrapper handles forts, outcomes, routs, and where the survivors go.
+ * Runs once per pair per tick, from the LOWER army id.
  */
-function fightField(
-  state: GameState,
-  army: Army,
-  out: SimEvent[],
-  streams: SimStreams,
-  survivors: Army[],
-): void {
+function fightField(state: GameState, army: Army, out: SimEvent[], survivors: Army[]): void {
   const foe = state.armies.find((x) => x.id === army.engagedWith);
   if (!foe || totalUnits(foe.units) <= 0) {
-    // the enemy is gone — pick the march back up
-    resumeAfterBattle(state, army);
-    survivors.push(army);
+    if (resumeAfterBattle(state, army)) survivors.push(army);
     return;
   }
   if (army.id > foe.id) {
-    // the lower id runs the round; we stand our ground this tick
-    survivors.push(army);
+    survivors.push(army); // the lower id runs the round; we hold this tick
     return;
   }
 
-  const round = resolveRound(
-    army.units,
-    foe.units,
-    { state, realm: army.ownerRealm },
-    { state, realm: foe.ownerRealm },
-    streams.combat,
-    0, // the open field knows no walls
-  );
-  applyLosses(army.units, round.attackerLosses);
-  applyLosses(foe.units, round.defenderLosses);
+  // roles: at most one side is a mustered defender; forts shield that side
+  const defender = army.defending ? army : foe.defending ? foe : null;
+  const attacker = defender === army ? foe : army;
+  let fort: FortState | undefined;
+  let fortCamp = -1;
+  let fortSiege = false;
+  if (defender?.defending?.camp !== undefined) {
+    fortCamp = defender.defending.camp;
+    const camp = state.camps[fortCamp];
+    if (camp) fort = { side: defender.id, hp: Math.max(0, camp.fortHp) };
+  } else if (defender?.defending?.settlement !== undefined) {
+    const town = state.settlements[defender.defending.settlement];
+    const site = town ? state.world.settlements[town.id] : undefined;
+    if (town && site) {
+      const hp = site.walls * 200 + (town.buildings.keep ?? 0) * 1200 - (attacker.siegeDamage ?? 0);
+      fort = { side: defender.id, hp: Math.max(0, hp) };
+      fortSiege = true;
+    }
+  }
 
-  const mine = totalUnits(army.units);
-  const theirs = totalUnits(foe.units);
+  const attackerWasDragon = (attacker.units.dragon ?? 0) > 0;
+  const result = fightUnits(state, army, foe, fort);
+  if (result.fortDamage > 0) {
+    if (fortCamp >= 0) {
+      const camp = state.camps[fortCamp];
+      if (camp) camp.fortHp = Math.max(0, camp.fortHp - result.fortDamage);
+    } else if (fortSiege) {
+      attacker.siegeDamage = (attacker.siegeDamage ?? 0) + result.fortDamage;
+    }
+  }
+
+  const mine = result.aStrength;
+  const theirs = result.bStrength;
+
+  /** Victory bookkeeping, role-aware. Returns true if the WINNER dissolves. */
+  const wins = (winner: Army, loser: Army): boolean => {
+    winner.engagedWith = undefined;
+    loser.engagedWith = undefined;
+    if (loser.defending?.camp !== undefined) {
+      campFalls(state, winner, loser.defending.camp, out);
+      return false;
+    }
+    if (loser.defending?.settlement !== undefined) {
+      const town = state.settlements[loser.defending.settlement];
+      if (town && town.ownerRealm !== winner.ownerRealm) return settlementFalls(state, winner, town, out);
+      goHomeward(state, winner);
+      return false;
+    }
+    // the loser was in the open field
+    if (loser === attacker && winner.defending?.settlement !== undefined) {
+      if (attackerWasDragon) {
+        state.realms[winner.ownerRealm].stock.gold += DRAGON_HOARD;
+        out.push({ kind: 'dragonSlain', realm: winner.ownerRealm, hoard: DRAGON_HOARD });
+      } else {
+        out.push({ kind: 'siegeRepelled', army: loser.id, settlement: winner.defending.settlement });
+      }
+      return false;
+    }
+    if (loser === attacker && winner.defending?.camp !== undefined) {
+      out.push({ kind: 'battleLost', army: loser.id, camp: winner.defending.camp });
+      return false;
+    }
+    out.push({ kind: 'fieldBattleWon', winner: winner.id, loser: loser.id });
+    return false;
+  };
+
+  if (mine <= 0 && theirs <= 0) {
+    out.push({ kind: 'armyDestroyed', army: army.id, realm: army.ownerRealm });
+    foe.engagedWith = undefined; // its own destroyed-check drops it later this tick
+    return;
+  }
+  if (theirs <= 0) {
+    const dissolves = wins(army, foe);
+    if (!dissolves) {
+      if (army.defending) {
+        if (resumeAfterBattle(state, army)) survivors.push(army);
+      } else {
+        if (army.phase === 'fighting') {
+          if (resumeAfterBattle(state, army)) survivors.push(army);
+        } else {
+          survivors.push(army); // wins() already routed us (home / next prey)
+        }
+      }
+    }
+    return; // the dead foe is dropped by its own top-of-loop check
+  }
+  if (mine <= 0) {
+    const dissolves = wins(foe, army);
+    if (dissolves) foe.units = {}; // wild band melts after plunder — reconciled away
+    out.push({ kind: 'armyDestroyed', army: army.id, realm: army.ownerRealm });
+    return; // we are not pushed — the army is no more
+  }
+  // routs: never the wilds, never a garrison fighting for its home
   const myStart = army.battleStartStrength || mine;
   const foeStart = foe.battleStartStrength || theirs;
-
-  /** A realm army breaks and runs for home. */
   const flee = (loser: Army): void => {
     loser.engagedWith = undefined;
     out.push({ kind: 'armyRouted', army: loser.id, camp: -1 });
@@ -436,28 +477,8 @@ function fightField(
     const home = state.world.settlements[loser.home];
     if (home) routePath(state, loser, home.i, home.j);
   };
-
-  if (mine <= 0 && theirs <= 0) {
-    // mutual annihilation — the chronicle will not believe it
-    out.push({ kind: 'armyDestroyed', army: army.id, realm: army.ownerRealm });
-    foe.engagedWith = undefined; // foe's own destroyed-check drops it later this tick
-    return;
-  }
-  if (theirs <= 0) {
-    out.push({ kind: 'fieldBattleWon', winner: army.id, loser: foe.id });
-    resumeAfterBattle(state, army);
-    survivors.push(army);
-    return; // the foe is dropped by its own top-of-loop check
-  }
-  if (mine <= 0) {
-    out.push({ kind: 'fieldBattleWon', winner: foe.id, loser: army.id });
-    out.push({ kind: 'armyDestroyed', army: army.id, realm: army.ownerRealm });
-    resumeAfterBattle(state, foe);
-    return; // we are not pushed — the army is no more
-  }
-  // wild bands never rout — they fight to the end
-  const iRout = army.ownerRealm !== WILD_REALM && mine < myStart * 0.3;
-  const foeRouts = foe.ownerRealm !== WILD_REALM && theirs < foeStart * 0.3;
+  const iRout = army.ownerRealm !== WILD_REALM && !army.defending && mine < myStart * 0.3;
+  const foeRouts = foe.ownerRealm !== WILD_REALM && !foe.defending && theirs < foeStart * 0.3;
   if (iRout || foeRouts) {
     if (iRout) {
       flee(army);
@@ -466,11 +487,10 @@ function fightField(
     if (foeRouts) flee(foe); // foe moves on its own later turn this tick
     if (!iRout) {
       out.push({ kind: 'fieldBattleWon', winner: army.id, loser: foe.id });
-      resumeAfterBattle(state, army);
-      survivors.push(army);
+      if (resumeAfterBattle(state, army)) survivors.push(army);
     } else if (!foeRouts) {
       out.push({ kind: 'fieldBattleWon', winner: foe.id, loser: army.id });
-      resumeAfterBattle(state, foe);
+      foe.engagedWith = undefined; // resumes on its own turn
     }
     return;
   }

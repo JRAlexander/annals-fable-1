@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { totalUnits } from '../src/sim/combat';
+import type { Army, UnitCounts } from '../src/sim/state';
+import { fightUnits } from '../src/sim/systems/unitCombat';
+import { spawnArmyUnits } from '../src/sim/unitStore';
 import { generateWorld } from '../src/worldgen/world';
 import { freshSim, run } from './helpers';
 
@@ -55,5 +59,47 @@ describe('bench', () => {
     const ms = (performance.now() - t0) / N;
     console.log(`advanceTick (armies active): ${(ms * 1000).toFixed(1)} µs avg over ${N} ticks`);
     expect(ms).toBeLessThan(2); // docs/PLAN.md budget, enforced from M4
+  });
+
+  it('a 300v300 per-unit battle stays under the 2ms tick budget', () => {
+    const sim = freshSim(2);
+    const conjure = (owner: number, counts: UnitCounts, x: number): Army => {
+      const army: Army = {
+        id: sim.state.nextArmyId++,
+        ownerRealm: owner,
+        home: 0,
+        units: { ...counts },
+        x,
+        z: 0,
+        prevX: x,
+        prevZ: 0,
+        path: [
+          [0, 0],
+          [0, 0],
+        ],
+        pathIdx: 1,
+        cellProgress: 0,
+        objective: null,
+        phase: 'fighting',
+        battleStartStrength: totalUnits(counts),
+        engagedWith: -1,
+      };
+      sim.state.armies.push(army);
+      spawnArmyUnits(sim.state, army, counts);
+      return army;
+    };
+    const A = conjure(0, { swordsman: 150, spearman: 100, archer: 50 }, 0);
+    const B = conjure(-1, { militia: 200, spearman: 60, archer: 40 }, 80);
+    A.engagedWith = B.id;
+    B.engagedWith = A.id;
+    const t0 = performance.now();
+    let ticks = 0;
+    while (totalUnits(A.units) > 0 && totalUnits(B.units) > 0 && ticks < 500) {
+      fightUnits(sim.state, A, B);
+      ticks++;
+    }
+    const ms = (performance.now() - t0) / ticks;
+    console.log(`fightUnits 300v300: ${(ms * 1000).toFixed(0)} µs avg over ${ticks} ticks`);
+    expect(ms).toBeLessThan(2);
   });
 });

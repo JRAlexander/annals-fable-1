@@ -128,6 +128,8 @@ export interface Army {
   siegeDamage?: number;
   /** Army id this army is locked in a FIELD battle with (M7a), if any. */
   engagedWith?: number;
+  /** Defender armies (M8b): mustered from a camp or a town garrison; survivors return there. */
+  defending?: { camp?: number; settlement?: number };
 }
 
 /**
@@ -145,6 +147,10 @@ export interface FieldUnit {
   prevZ: number;
   /** Formation slot within the group, assigned at spawn. */
   slot: number;
+  /** Hit points (M8b) — set at muster from unitHp modifiers. */
+  hp: number;
+  /** Ticks until this soldier may strike again. */
+  cd: number;
 }
 
 /** Live bandit camp state (site geography lives in WorldData.camps). */

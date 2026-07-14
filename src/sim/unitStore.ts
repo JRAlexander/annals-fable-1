@@ -1,5 +1,6 @@
 import type { UnitId } from '../content/schema';
 import { UNITS } from '../content/units';
+import { resolveStat } from './modifiers';
 import type { Army, FieldUnit, GameState, UnitCounts } from './state';
 
 /**
@@ -34,6 +35,7 @@ export function spawnArmyUnits(state: GameState, army: Army, counts: UnitCounts)
     const n = counts[type] ?? 0;
     for (let k = 0; k < n; k++) {
       const { dx, dz } = slotOffset(slot, total);
+      const def = UNITS[type];
       state.units.push({
         id: state.nextUnitId++,
         type,
@@ -43,6 +45,12 @@ export function spawnArmyUnits(state: GameState, army: Army, counts: UnitCounts)
         prevX: army.x + dx,
         prevZ: army.z + dz,
         slot: slot++,
+        // hp fixed at muster — later techs arm recruits, not veterans
+        hp: resolveStat({ state, realm: army.ownerRealm }, def?.hp ?? 1, {
+          stat: 'unitHp',
+          unitTag: def?.tags[0],
+        }),
+        cd: 0,
       });
     }
   }
@@ -54,9 +62,9 @@ export function removeArmyUnits(state: GameState, armyId: number): void {
 }
 
 /**
- * After casualties on the counts, drop excess entities per type — highest
- * slot first: the rear ranks fall. Never spawns (counts can only shrink in
- * battle); formArmy is the only birth place.
+ * Keep the entity mirror honest against the counts, both ways: excess
+ * entities fall (highest slot first — the rear ranks), missing entities
+ * muster at the army's anchor. Deterministic in type and slot order.
  */
 export function reconcileUnits(state: GameState, army: Army): void {
   const have = new Map<UnitId, FieldUnit[]>();
@@ -67,6 +75,11 @@ export function reconcileUnits(state: GameState, army: Army): void {
     have.set(u.type, list);
   }
   const doomed = new Set<number>();
+  const deficits: UnitCounts = {};
+  for (const [type, n] of Object.entries(army.units) as [UnitId, number][]) {
+    const got = have.get(type)?.length ?? 0;
+    if (got < (n ?? 0)) deficits[type] = (n ?? 0) - got;
+  }
   for (const [type, list] of have) {
     const want = army.units[type] ?? 0;
     if (list.length <= want) continue;
@@ -74,6 +87,7 @@ export function reconcileUnits(state: GameState, army: Army): void {
     for (let k = 0; k < list.length - want; k++) doomed.add(list[k].id);
   }
   if (doomed.size > 0) state.units = state.units.filter((u) => !doomed.has(u.id));
+  if (Object.keys(deficits).length > 0) spawnArmyUnits(state, army, deficits);
 }
 
 /**
@@ -88,9 +102,11 @@ export function steerUnits(state: GameState): void {
     const anchor = anchors.get(u.group);
     if (anchor) anchor.total++;
   }
+  const fighting = new Set(state.armies.filter((a) => a.engagedWith !== undefined).map((a) => a.id));
   for (const u of state.units) {
     u.prevX = u.x;
     u.prevZ = u.z;
+    if (fighting.has(u.group)) continue; // the combat engine moves embattled soldiers
     const anchor = anchors.get(u.group);
     if (!anchor) continue;
     const { dx, dz } = slotOffset(u.slot, anchor.total);
@@ -170,5 +186,40 @@ export function splitUnits(state: GameState, ids: ReadonlySet<number>, home: num
   state.armies.push(army);
   resequenceSlots(state, newId);
   for (const srcId of bySource.keys()) resequenceSlots(state, srcId);
+  return army;
+}
+
+/**
+ * Muster a defender army (M8b): a camp's bandits or a town's garrison take
+ * the field as a real army standing at the site. Counts move INTO the army;
+ * `dismissDefenders` returns the survivors when the danger has passed.
+ */
+export function musterDefenders(
+  state: GameState,
+  ownerRealm: number,
+  counts: UnitCounts,
+  x: number,
+  z: number,
+  defending: { camp?: number; settlement?: number },
+): Army {
+  const army: Army = {
+    id: state.nextArmyId++,
+    ownerRealm,
+    home: defending.settlement ?? 0,
+    units: { ...counts },
+    x,
+    z,
+    prevX: x,
+    prevZ: z,
+    path: [[0, 0]],
+    pathIdx: 0,
+    cellProgress: 0,
+    objective: null,
+    phase: 'idle', // the engagement pass locks the pair on the next tick
+    battleStartStrength: 0,
+    defending,
+  };
+  state.armies.push(army);
+  spawnArmyUnits(state, army, army.units);
   return army;
 }

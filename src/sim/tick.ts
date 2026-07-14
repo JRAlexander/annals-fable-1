@@ -34,7 +34,7 @@ export function advanceTick(state: GameState, issued: IssuedCommand[], streams: 
   constructionSystem(state, events);
   researchSystem(state, events);
   trainingSystem(state, events);
-  armiesSystem(state, events, streams);
+  armiesSystem(state, events);
   productionSystem(state, events);
   if (isDayEnd(state.tick)) {
     populationSystem(state, events);
