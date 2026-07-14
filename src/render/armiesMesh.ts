@@ -30,8 +30,6 @@ const WILD_PHASE_COLOR: Record<string, number> = {
 const DRAGON_COLOR = 0xd84418;
 
 const SOLDIER_COLOR: Record<string, number> = { player: 0xd8c88f, rival: 0x9a3a30, wild: 0x2a2622 };
-const MAX_SOLDIERS_PER_ARMY = 24;
-const SOLDIER_SPACING = 7;
 
 export interface ArmyPick {
   mesh: THREE.InstancedMesh;
@@ -46,6 +44,8 @@ export interface ArmiesHandle {
     selected?: ReadonlySet<number>,
     /** Fog predicates (M7b): hostile armies need line of sight, tents need exploration. */
     fog?: { visibleAt(x: number, z: number): boolean; exploredAt(x: number, z: number): boolean },
+    /** Individually selected soldiers (M8a) get small rings. */
+    selectedUnits?: ReadonlySet<number>,
   ): void;
   /** The banner cones, raycastable; instanceId maps through `ids`. */
   getPickTargets(): ArmyPick | null;
@@ -143,7 +143,7 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
     getPickTargets(): ArmyPick | null {
       return cones ? { mesh: cones, ids: pickIds } : null;
     },
-    sync(state, alpha, selected, fog) {
+    sync(state, alpha, selected, fog, selectedUnits) {
       // tents show when the ground is explored and the camp still stands
       for (const camp of state.camps) {
         const c = world.camps[camp.id];
@@ -165,13 +165,11 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
       }
 
       const n = state.armies.length;
-      const soldierWant = state.armies.reduce(
-        (t, a) => t + Math.min(MAX_SOLDIERS_PER_ARMY, Math.ceil(totalUnits(a.units) / 3)),
-        0,
-      );
-      const selCount = selected?.size ?? 0;
+      const soldierWant = state.units.length;
+      const selCount = (selected?.size ?? 0) + (selectedUnits?.size ?? 0);
       ensureCapacity(n, soldierWant, Math.max(1, selCount));
       pickIds = [];
+      const ownerOf = new Map(state.armies.map((a) => [a.id, a.ownerRealm]));
 
       let sIdx = 0;
       let rIdx = 0;
@@ -202,33 +200,6 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
         cones?.setColorAt(k, _c.set(isDragon ? DRAGON_COLOR : (palette[a.phase] ?? 0xc9a227)));
         pickIds.push(a.id);
 
-        // the formation: a phalanx block behind the banner
-        if (!isDragon) {
-          const count = Math.min(MAX_SOLDIERS_PER_ARMY, Math.ceil(totalUnits(a.units) / 3));
-          const cols = Math.max(1, Math.ceil(Math.sqrt(count * 1.5)));
-          const tint = _c.set(
-            a.ownerRealm === 0
-              ? SOLDIER_COLOR.player
-              : a.ownerRealm < 0
-                ? SOLDIER_COLOR.wild
-                : SOLDIER_COLOR.rival,
-          );
-          for (let s = 0; s < count && soldiers && sIdx < soldierCap; s++) {
-            const col = (s % cols) - (cols - 1) / 2;
-            const row = Math.floor(s / cols) + 1;
-            const sx = x + col * SOLDIER_SPACING;
-            const sz = z + row * SOLDIER_SPACING;
-            const sy = terrainHeight(world.heightmap, sx, sz);
-            _v.set(sx, sy, sz);
-            _s.set(1, 1, 1);
-            _q.identity();
-            _m.compose(_v, _q, _s);
-            soldiers.setMatrixAt(sIdx, _m);
-            soldiers.setColorAt(sIdx, tint);
-            sIdx++;
-          }
-        }
-
         if (selected?.has(a.id) && rings && rIdx < ringCap) {
           const rs = Math.max(1.2, sc);
           _v.set(x, y + 1.5, z);
@@ -239,6 +210,36 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
           rIdx++;
         }
       });
+
+      // every soldier at its TRUE position (M8a), interpolated like the banners
+      for (const u of state.units) {
+        if (!soldiers || sIdx >= soldierCap) break;
+        const owner = ownerOf.get(u.group) ?? 0;
+        const ux = u.prevX + (u.x - u.prevX) * alpha;
+        const uz = u.prevZ + (u.z - u.prevZ) * alpha;
+        if (fog && owner !== 0 && !fog.visibleAt(ux, uz)) continue; // unseen soldiers stay unseen
+        const uy = terrainHeight(world.heightmap, ux, uz);
+        const isDragonUnit = u.type === 'dragon';
+        _v.set(ux, uy, uz);
+        const usc = isDragonUnit ? 4 : 1;
+        _s.set(usc, usc, usc);
+        _q.identity();
+        _m.compose(_v, _q, _s);
+        soldiers.setMatrixAt(sIdx, _m);
+        soldiers.setColorAt(
+          sIdx,
+          _c.set(owner === 0 ? SOLDIER_COLOR.player : owner < 0 ? SOLDIER_COLOR.wild : SOLDIER_COLOR.rival),
+        );
+        sIdx++;
+        if (selectedUnits?.has(u.id) && rings && rIdx < ringCap) {
+          _v.set(ux, uy + 1, uz);
+          _s.set(0.28, 1, 0.28);
+          _q.identity();
+          _m.compose(_v, _q, _s);
+          rings.setMatrixAt(rIdx, _m);
+          rIdx++;
+        }
+      }
 
       if (cones) {
         cones.count = n;

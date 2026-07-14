@@ -10,6 +10,7 @@ import { GRID, WORLD_SIZE } from '../worldgen/types';
 import type { SimEvent } from './events';
 import type { GameState, Realm, RealmId } from './state';
 import { routePath } from './systems/armies';
+import { spawnArmyUnits, splitUnits } from './unitStore';
 
 /** Nearest navgrid cell to a world position, as routePath arguments. */
 function nearestCell(x: number, z: number): [number, number] {
@@ -47,7 +48,7 @@ export type Command =
   | { kind: 'orderArmy'; army: number; objective: Objective }
   // RTS mode (M7+), same envelope, typed now:
   | { kind: 'moveUnits'; units: number[]; to: Vec2 }
-  | { kind: 'attackTarget'; units: number[]; target: number }
+  | { kind: 'attackTarget'; units: number[]; target: number; targetKind: 'army' | 'camp' | 'settlement' }
   | { kind: 'placeBuilding'; building: BuildingId; at: Vec2 };
 
 export interface IssuedCommand {
@@ -398,7 +399,7 @@ export function applyCommands(state: GameState, issued: IssuedCommand[], out: Si
           units[id] = n;
           strength += n;
         }
-        state.armies.push({
+        const formed = {
           id: state.nextArmyId,
           ownerRealm: realm,
           home: s.id,
@@ -407,13 +408,15 @@ export function applyCommands(state: GameState, issued: IssuedCommand[], out: Si
           z: site.z,
           prevX: site.x,
           prevZ: site.z,
-          path: [[site.i, site.j]],
+          path: [[site.i, site.j]] as [number, number][],
           pathIdx: 0,
           cellProgress: 0,
           objective: null,
-          phase: 'idle',
+          phase: 'idle' as const,
           battleStartStrength: 0,
-        });
+        };
+        state.armies.push(formed);
+        spawnArmyUnits(state, formed, units); // the soldiers take the field (M8a)
         out.push({ kind: 'armyFormed', army: state.nextArmyId, settlement: s.id, strength });
         state.nextArmyId += 1;
         break;
@@ -550,8 +553,95 @@ export function applyCommands(state: GameState, issued: IssuedCommand[], out: Si
         out.push({ kind: 'warDeclared', realm, target: cmd.target });
         break;
       }
-      default:
-        reject(out, realm, `command '${cmd.kind}' not implemented yet`);
+      case 'moveUnits':
+      case 'attackTarget': {
+        const wanted = cmd.kind === 'moveUnits' ? cmd.units : cmd.units;
+        const ids = new Set(wanted);
+        if (ids.size === 0) {
+          reject(out, realm, 'no soldiers chosen');
+          break;
+        }
+        // every chosen soldier must exist, serve this realm, and be free to move
+        const chosen = state.units.filter((u) => ids.has(u.id));
+        if (chosen.length !== ids.size) {
+          reject(out, realm, 'some of those soldiers are no more');
+          break;
+        }
+        const groups = new Map(state.armies.map((a) => [a.id, a]));
+        let bad = false;
+        for (const u of chosen) {
+          const g = groups.get(u.group);
+          if (!g || g.ownerRealm !== realm) {
+            reject(out, realm, 'those soldiers are not yours to command');
+            bad = true;
+            break;
+          }
+          if (g.phase === 'fighting') {
+            reject(out, realm, 'soldiers locked in battle cannot be detached');
+            bad = true;
+            break;
+          }
+        }
+        if (bad) break;
+
+        // resolve destination/target BEFORE splitting — invalid orders split nothing
+        if (cmd.kind === 'moveUnits') {
+          const { i, j } = worldToCell(cmd.to.x, cmd.to.z);
+          if (i < 0 || j < 0 || i >= GRID || j >= GRID || !Number.isFinite(state.world.navCost[hidx(i, j)])) {
+            reject(out, realm, 'soldiers cannot march into the sea');
+            break;
+          }
+          const home = groups.get(chosen[0].group)?.home ?? 0;
+          const det = splitUnits(state, ids, home);
+          det.ownerRealm = realm;
+          det.objective = { kind: 'moveTo', i, j };
+          det.phase = 'marching';
+          routePath(state, det, i, j);
+          out.push({ kind: 'armyFormed', army: det.id, settlement: home, strength: chosen.length });
+        } else {
+          // attackTarget: the id space is explicit — army, camp, or settlement
+          const r = state.realms[realm];
+          const enemyArmy =
+            cmd.targetKind === 'army'
+              ? state.armies.find(
+                  (a) =>
+                    a.id === cmd.target &&
+                    a.ownerRealm !== realm &&
+                    (a.ownerRealm === WILD_REALM || r.atWarWith.includes(a.ownerRealm)),
+                )
+              : undefined;
+          const camp = cmd.targetKind === 'camp' ? state.camps[cmd.target] : undefined;
+          const settlement =
+            cmd.targetKind === 'settlement'
+              ? state.settlements.find(
+                  (x) => x.id === cmd.target && x.ownerRealm !== realm && r.atWarWith.includes(x.ownerRealm),
+                )
+              : undefined;
+          if (!enemyArmy && (!camp || camp.cleared) && !settlement) {
+            reject(out, realm, 'no such enemy to strike');
+            break;
+          }
+          const home = groups.get(chosen[0].group)?.home ?? 0;
+          const det = splitUnits(state, ids, home);
+          det.ownerRealm = realm;
+          det.phase = 'marching';
+          if (enemyArmy) {
+            det.objective = { kind: 'attackArmy', army: enemyArmy.id };
+            routePath(state, det, ...nearestCell(enemyArmy.x, enemyArmy.z));
+          } else if (camp && !camp.cleared) {
+            det.objective = { kind: 'attackCamp', camp: camp.id };
+            const site = state.world.camps[camp.id];
+            routePath(state, det, site.i, site.j);
+          } else if (settlement) {
+            det.objective = { kind: 'attackSettlement', settlement: settlement.id };
+            const site = state.world.settlements[settlement.id];
+            routePath(state, det, site.i, site.j);
+          }
+          out.push({ kind: 'armyFormed', army: det.id, settlement: home, strength: chosen.length });
+        }
+        break;
+      }
+      // every command kind is now live — the M1 envelope is fully realized
     }
   }
 }

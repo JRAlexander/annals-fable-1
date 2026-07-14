@@ -234,8 +234,8 @@ async function boot(): Promise<void> {
     boxEl: selBoxEl,
     enqueue,
     onSelection: () => {
-      selChipEl.textContent = describeSelection(state, input.selection);
-      selChipEl.style.display = input.selection.size ? 'block' : 'none';
+      selChipEl.textContent = describeSelection(state, input.selection, input.unitSelection);
+      selChipEl.style.display = input.selection.size || input.unitSelection.size ? 'block' : 'none';
     },
   });
   let ended = state.outcome !== null; // a replayed ending is not re-announced
@@ -260,12 +260,19 @@ async function boot(): Promise<void> {
       armyPanel.update(state);
       techMenu.update(state);
       constructed.sync(state, fogQueries);
-      // prune dead armies out of the selection so rings and orders stay honest
+      // prune the dead out of both selections so rings and orders stay honest
       for (const id of input.selection) {
         if (!state.armies.some((a) => a.id === id && a.ownerRealm === 0)) input.selection.delete(id);
       }
-      armies.sync(state, alpha, input.selection, fogQueries);
-      if (input.selection.size) selChipEl.textContent = describeSelection(state, input.selection);
+      if (input.unitSelection.size) {
+        const liveIds = new Set(state.units.map((u) => u.id));
+        for (const id of input.unitSelection) {
+          if (!liveIds.has(id)) input.unitSelection.delete(id);
+        }
+      }
+      armies.sync(state, alpha, input.selection, fogQueries, input.unitSelection);
+      if (input.selection.size || input.unitSelection.size)
+        selChipEl.textContent = describeSelection(state, input.selection, input.unitSelection);
       else if (selChipEl.style.display !== 'none') selChipEl.style.display = 'none';
       scene.render();
     },

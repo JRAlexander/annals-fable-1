@@ -10,6 +10,7 @@ import { findPath } from '../pathfind';
 import type { Army, GameState } from '../state';
 import type { SimStreams } from '../tick';
 import { dateOf } from '../time';
+import { reconcileUnits, steerUnits } from '../unitStore';
 import { dragonTarget } from './threats';
 
 /** Base march rate in path-cells per tick, scaled by unit speed and terrain. */
@@ -286,6 +287,15 @@ export function armiesSystem(state: GameState, out: SimEvent[], streams: SimStre
     }
   }
   state.armies = survivors;
+
+  // the physical layer follows (M8a): orphaned soldiers vanish with their
+  // army, casualties thin the ranks, and everyone steps toward their slot
+  const alive = new Set(survivors.map((a) => a.id));
+  if (state.units.some((u) => !alive.has(u.group))) {
+    state.units = state.units.filter((u) => alive.has(u.group));
+  }
+  for (const a of state.armies) reconcileUnits(state, a);
+  steerUnits(state);
 }
 
 /** Siege of an enemy settlement: garrison (with its one-time levy) behind walls/keep. */

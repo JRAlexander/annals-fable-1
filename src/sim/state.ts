@@ -130,6 +130,23 @@ export interface Army {
   engagedWith?: number;
 }
 
+/**
+ * A soldier on the field (M8a): the physical mirror of an army's counts.
+ * `group` is the army id; owner and stats derive from it and `type`.
+ */
+export interface FieldUnit {
+  id: number;
+  type: UnitId;
+  group: number;
+  x: number;
+  z: number;
+  /** Previous tick's position — the renderer interpolates. */
+  prevX: number;
+  prevZ: number;
+  /** Formation slot within the group, assigned at spawn. */
+  slot: number;
+}
+
 /** Live bandit camp state (site geography lives in WorldData.camps). */
 export interface BanditCamp {
   id: number;
@@ -149,6 +166,9 @@ export interface GameState {
   settlements: SimSettlement[]; // index === id
   armies: Army[];
   nextArmyId: number;
+  /** The physical unit layer (M8a) — one entity per fielded soldier. */
+  units: FieldUnit[];
+  nextUnitId: number;
   camps: BanditCamp[]; // index === WorldData.camps id
   /** Latched by the victory system; the sim keeps ticking after — the world lives on. */
   outcome: GameOutcome | null;
@@ -316,6 +336,8 @@ export function initGameState(world: WorldData, playerCulture: CultureId = 'vale
     settlements,
     armies: [],
     nextArmyId: 0,
+    units: [],
+    nextUnitId: 0,
     camps,
     outcome: null,
     dragonWoken: false,

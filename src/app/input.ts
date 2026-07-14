@@ -18,6 +18,8 @@ const CAMP_PICK_RADIUS = 80;
 export interface InputHandle {
   /** Currently selected army ids (player-owned; pruned as armies die). */
   readonly selection: Set<number>;
+  /** Individually selected soldier ids (M8a) — box-drag selects these. */
+  readonly unitSelection: Set<number>;
   /** Arm (or disarm with null) free-placement mode for a building (M7b). */
   setPlacement(building: BuildingId | null): void;
   dispose(): void;
@@ -49,6 +51,7 @@ export function createInput(opts: {
   };
 
   const selection = new Set<number>();
+  const unitSelection = new Set<number>();
   const raycaster = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
 
@@ -121,8 +124,16 @@ export function createInput(opts: {
 
   const setSelection = (ids: number[]) => {
     selection.clear();
+    unitSelection.clear();
     for (const id of ids) selection.add(id);
     onSelection([...selection]);
+  };
+
+  const setUnitSelection = (ids: number[]) => {
+    selection.clear();
+    unitSelection.clear();
+    for (const id of ids) unitSelection.add(id);
+    onSelection(ids);
   };
 
   const castArmies = (ev: PointerEvent | MouseEvent): number | null => {
@@ -205,20 +216,24 @@ export function createInput(opts: {
     const wasBox = boxEl.style.display === 'block';
     boxEl.style.display = 'none';
     if (wasBox) {
-      // box select: every player army whose projected position is inside
+      // box select picks SOLDIERS (M8a): every player unit projected inside
       const x0 = Math.min(downX, ev.clientX);
       const x1 = Math.max(downX, ev.clientX);
       const y0 = Math.min(downY, ev.clientY);
       const y1 = Math.max(downY, ev.clientY);
-      const ids: number[] = [];
-      for (const a of state.armies) {
-        if (a.ownerRealm !== 0) continue;
-        projected.set(a.x, terrainHeight(world.heightmap, a.x, a.z), a.z).project(scene.camera);
+      const inBox = (wx: number, wz: number): boolean => {
+        projected.set(wx, terrainHeight(world.heightmap, wx, wz), wz).project(scene.camera);
         const sx = ((projected.x + 1) / 2) * window.innerWidth;
         const sy = ((1 - projected.y) / 2) * window.innerHeight;
-        if (sx >= x0 && sx <= x1 && sy >= y0 && sy <= y1) ids.push(a.id);
+        return sx >= x0 && sx <= x1 && sy >= y0 && sy <= y1;
+      };
+      const owners = new Map(state.armies.map((a) => [a.id, a.ownerRealm]));
+      const ids: number[] = [];
+      for (const u of state.units) {
+        if (owners.get(u.group) !== 0) continue;
+        if (inBox(u.x, u.z)) ids.push(u.id);
       }
-      setSelection(ids);
+      setUnitSelection(ids);
       return;
     }
     const hitId = castArmies(ev);
@@ -240,6 +255,46 @@ export function createInput(opts: {
     ev.preventDefault();
     if (placing) {
       clearGhost();
+      return;
+    }
+    if (unitSelection.size > 0) {
+      // soldier micro (M8a): split-and-command through the same queue
+      const owners = new Map(state.armies.map((a) => [a.id, a]));
+      const ids = [...unitSelection].filter((id) => {
+        const u = state.units.find((x) => x.id === id);
+        return u && owners.get(u.group)?.ownerRealm === 0 && owners.get(u.group)?.phase !== 'fighting';
+      });
+      if (ids.length === 0) return;
+      const hitArmy = castArmies(ev);
+      const enemy = hitArmy !== null ? state.armies.find((a) => a.id === hitArmy) : undefined;
+      if (enemy && enemy.ownerRealm !== 0) {
+        enqueue({ kind: 'attackTarget', units: ids, target: enemy.id, targetKind: 'army' });
+        return;
+      }
+      const point = castGround(ev);
+      if (!point) return;
+      const camp = state.camps.find(
+        (c) =>
+          !c.cleared &&
+          Math.hypot(world.camps[c.id].x - point.x, world.camps[c.id].z - point.z) < CAMP_PICK_RADIUS,
+      );
+      if (camp) {
+        enqueue({ kind: 'attackTarget', units: ids, target: camp.id, targetKind: 'camp' });
+        return;
+      }
+      const town = state.settlements.find((t) => {
+        if (t.ownerRealm === 0) return false;
+        const site = world.settlements[t.id];
+        return (
+          Math.hypot(site.x - point.x, site.z - point.z) < site.radius * 1.2 &&
+          state.realms[0].atWarWith.includes(t.ownerRealm)
+        );
+      });
+      if (town) {
+        enqueue({ kind: 'attackTarget', units: ids, target: town.id, targetKind: 'settlement' });
+        return;
+      }
+      enqueue({ kind: 'moveUnits', units: ids, to: { x: point.x, z: point.z } });
       return;
     }
     if (selection.size === 0) return;
@@ -311,6 +366,7 @@ export function createInput(opts: {
 
   return {
     selection,
+    unitSelection,
     setPlacement,
     dispose() {
       canvas.removeEventListener('pointerdown', onPointerDown);
@@ -323,8 +379,17 @@ export function createInput(opts: {
 }
 
 /** One line describing the selection, for the HUD chip. */
-export function describeSelection(state: GameState, ids: ReadonlySet<number>): string {
-  const mine = state.armies.filter((a) => ids.has(a.id) && a.ownerRealm === 0);
+export function describeSelection(
+  state: GameState,
+  armyIds: ReadonlySet<number>,
+  unitIds?: ReadonlySet<number>,
+): string {
+  if (unitIds && unitIds.size > 0) {
+    const chosen = state.units.filter((u) => unitIds.has(u.id));
+    const groups = new Set(chosen.map((u) => u.group));
+    return `⚔ ${chosen.length} ${chosen.length === 1 ? 'soldier' : 'soldiers'} from ${groups.size} ${groups.size === 1 ? 'army' : 'armies'} — right-click to detach & command`;
+  }
+  const mine = state.armies.filter((a) => armyIds.has(a.id) && a.ownerRealm === 0);
   if (mine.length === 0) return '';
   const troops = mine.reduce((t, a) => t + totalUnits(a.units), 0);
   const phases = [...new Set(mine.map((a) => a.phase))].join(', ');

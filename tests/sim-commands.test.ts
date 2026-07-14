@@ -70,12 +70,12 @@ describe('commands', () => {
     expect(events.filter((e) => e.kind === 'commandRejected' && e.realm === 0)).toHaveLength(2);
   });
 
-  it('future-milestone commands reject cleanly instead of throwing', () => {
+  it('unit commands with unknown soldiers reject cleanly instead of throwing', () => {
     const sim = freshSim(7);
     const events = run(sim, 10, {
-      2: [issue({ kind: 'moveUnits', units: [1], to: { x: 0, z: 0 } })],
+      2: [issue({ kind: 'moveUnits', units: [999], to: { x: 0, z: 0 } })],
     });
     const rej = events.find((e) => e.kind === 'commandRejected' && e.realm === 0);
-    expect(rej && rej.kind === 'commandRejected' && rej.reason).toMatch(/not implemented/);
+    expect(rej && rej.kind === 'commandRejected' && rej.reason).toMatch(/no more/);
   });
 });
