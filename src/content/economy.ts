@@ -1,9 +1,12 @@
-import type { ResourceId } from './schema';
+import type { BuildingId, ResourceId } from './schema';
 
 /**
- * M1 economy tunables — data only. Rates are per worker per TICK unless noted.
+ * Economy tunables — data only. Rates are per worker per TICK unless noted.
  * Every consumer routes these through sim/modifiers.resolveStat, so techs and
- * culture bonuses (M3/M5) modify them without touching this file.
+ * culture bonuses modify them without touching this file.
+ *
+ * Since M9 the free tier bases are deliberately TINY: housing, storage, and
+ * worker slots come from constructed buildings (see content/buildings.ts).
  */
 
 export type WorkJob = 'farm' | 'forest' | 'quarry' | 'trade';
@@ -32,22 +35,40 @@ export const WORK_RATIO = 0.6;
 export const FOOD_PER_POP_DAY = 0.02;
 
 /** Daily population growth fraction (when fed and under the housing cap). */
-export const BASE_GROWTH_PER_DAY = 0.002;
+export const BASE_GROWTH_PER_DAY = 0.006;
 
 /** Fraction of a settlement that dies per day at total famine (scaled by shortfall). */
 export const STARVATION_RATE = 0.02;
 
+/** Population each settlement begins with (worldgen tiers, sim numbers). */
+export const STARTING_POP: Record<'capital' | 'town' | 'village', number> = {
+  capital: 200,
+  town: 110,
+  village: 60,
+};
+
+/**
+ * Buildings every settlement is seeded with at init: a Town Center and a few
+ * houses. Deliberately house-only among the buildables — a second founding-age
+ * building type would pre-satisfy the age-advance requirement realm-wide.
+ */
+export const SEED_BUILDINGS: Record<'capital' | 'town' | 'village', Partial<Record<BuildingId, number>>> = {
+  capital: { townCenter: 1, house: 5 },
+  town: { townCenter: 1, house: 3 },
+  village: { townCenter: 1, house: 1 },
+};
+
 export const HOUSING_BASE: Record<'capital' | 'town' | 'village', number> = {
-  capital: 3200,
-  town: 1500,
-  village: 500,
+  capital: 50,
+  town: 30,
+  village: 20,
 };
 
 /** Per-settlement contribution to the realm's storage cap, per resource. */
 export const STORAGE_BASE: Record<'capital' | 'town' | 'village', number> = {
-  capital: 2000,
-  town: 800,
-  village: 200,
+  capital: 100,
+  town: 50,
+  village: 25,
 };
 
 export const STARTING_STOCK: Record<ResourceId, number> = {
@@ -62,23 +83,30 @@ export const POP_MILESTONES: readonly number[] = [100, 250, 500, 1000, 2500, 500
 
 /**
  * siteCapacity: worker slots contributed by one nearby cell of each biome.
- * Deliberately scarce relative to workforce — a capital's workers should
- * outgrow what the land offers, so that constructed farms/camps/quarries
- * (which ADD slots) are meaningful decisions rather than decoration.
+ * Deliberately scarce relative to workforce — the land offers a living, not
+ * a livelihood; constructed farms/camps/quarries (which ADD slots) are where
+ * the economy actually comes from.
  */
 export const SLOTS_PER_CELL = {
-  farmland: 4,
-  meadow: 1,
-  deciduous: 4,
-  pine: 2,
-  rock: 3,
+  farmland: 1,
+  meadow: 0,
+  deciduous: 1,
+  pine: 1,
+  rock: 1,
 } as const;
+
+/** Floor on terrain-derived slots — no settlement starts unable to feed itself at all. */
+export const MIN_SITE_SLOTS: Record<'farm' | 'forest' | 'quarry', number> = {
+  farm: 8,
+  forest: 4,
+  quarry: 2,
+};
 
 /** Trade slots: settlement base by tier, plus harbor and per-road bonuses. */
 export const TRADE_BASE: Record<'capital' | 'town' | 'village', number> = {
-  capital: 300,
-  town: 120,
-  village: 30,
+  capital: 12,
+  town: 6,
+  village: 2,
 };
-export const TRADE_HARBOR_BONUS = 150;
-export const TRADE_PER_ROAD = 60;
+export const TRADE_HARBOR_BONUS = 10;
+export const TRADE_PER_ROAD = 4;

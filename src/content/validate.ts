@@ -1,6 +1,7 @@
 import { AGE_ORDER, AGES, ageIndex } from './ages';
 import { BUILDINGS } from './buildings';
 import { CULTURES } from './cultures';
+import { SEED_BUILDINGS } from './economy';
 import type { Cost, ResourceId } from './schema';
 import { TECHS } from './techs';
 import { UNITS } from './units';
@@ -41,6 +42,19 @@ export function validateContent(): string[] {
       if (m.op === 'mul' && (!Number.isFinite(m.value) || m.value <= 0))
         errors.push(`building ${key}: mul modifier must be finite and > 0`);
     }
+    for (const fn of def.functions) {
+      if (fn.kind === 'fort' && fn.hp <= 0) errors.push(`building ${key}: fort hp must be positive`);
+    }
+    if (def.seedOnly && Object.keys(def.cost).length > 0)
+      errors.push(`building ${key}: seedOnly buildings must be free (never paid for)`);
+  }
+
+  // settlement seeds: real buildings, exactly one town center per tier
+  for (const [tier, seeds] of Object.entries(SEED_BUILDINGS)) {
+    for (const id of Object.keys(seeds)) {
+      if (!BUILDINGS[id]) errors.push(`seed ${tier}: building '${id}' does not exist`);
+    }
+    if ((seeds.townCenter ?? 0) !== 1) errors.push(`seed ${tier}: must seed exactly one townCenter`);
   }
 
   for (const [key, def] of Object.entries(TECHS)) {
@@ -147,7 +161,8 @@ export function validateContent(): string[] {
   for (let i = 0; i < AGE_ORDER.length - 1; i++) {
     const age = AGE_ORDER[i];
     const next = AGES[AGE_ORDER[i + 1]];
-    const types = Object.values(BUILDINGS).filter((b) => b.requiresAge === age).length;
+    // seedOnly buildings never count toward advancement (they're free at init)
+    const types = Object.values(BUILDINGS).filter((b) => b.requiresAge === age && !b.seedOnly).length;
     if (types < next.requires.buildingsFromCurrentAge)
       errors.push(
         `age ${age}: only ${types} building types but advancing needs ${next.requires.buildingsFromCurrentAge}`,

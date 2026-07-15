@@ -1,11 +1,10 @@
 import { AGES, nextAge } from '../../content/ages';
-import { BUILDINGS } from '../../content/buildings';
 import type { BuildingId, TechId } from '../../content/schema';
 import { TECHS } from '../../content/techs';
 import { UNITS } from '../../content/units';
 import { totalUnits } from '../combat';
 import type { Command, IssuedCommand } from '../commands';
-import type { GameState, Realm } from '../state';
+import type { GameState } from '../state';
 import { dateOf, isDayEnd } from '../time';
 
 /**
@@ -31,14 +30,18 @@ export function aiSystem(state: GameState): IssuedCommand[] {
     const day = dateOf(state.tick).day;
 
     // --- economy: one building at a time, in priority order ---
+    // houses lead: since M9 the popCap starts near the starting pop, and a
+    // realm that stops housing stops growing (and stops fielding armies)
     if (!queued) {
       const wants: [BuildingId, number][] = [
-        ['farm', 2 + Math.floor(day / 240)],
-        ['house', 1 + Math.floor(day / 300)],
+        ['house', 2 + Math.floor(day / 90)],
+        ['farm', 1 + Math.floor(day / 180)],
         ['lumberCamp', 1],
         ['barracks', 1],
+        ['storehouse', 1 + Math.floor(day / 300)],
         ['market', 1],
         ['quarry', 1],
+        ['palisade', 1],
       ];
       // the endgame: a rich Golden-age realm races for the Wonder
       if (realm.age === 'golden' && count('wonder') === 0 && realm.stock.stone >= 2000) {

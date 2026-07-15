@@ -23,35 +23,10 @@ export type BiomeId = (typeof Biome)[keyof typeof Biome];
 export type SettlementTier = 'capital' | 'town' | 'village';
 
 /**
- * Decorative buildings scattered at worldgen time so M0 has a lived-in world.
- * From M2 on, player/AI-constructed buildings (sim state) replace this layer.
+ * A settlement SITE is pure geography: where a town may stand and how much
+ * room it has. Everything that lives there — population, buildings, walls —
+ * is sim state seeded at init (M9 removed the ANNALS decorative layer).
  */
-export const DECOR_ARCHS = [
-  'house',
-  'longhouse',
-  'shop',
-  'smithy',
-  'mill',
-  'granary',
-  'tavern',
-  'temple',
-  'warehouse',
-  'tower',
-  'wall',
-  'keep',
-] as const;
-export type DecorArch = (typeof DECOR_ARCHS)[number];
-
-export interface DecorBuilding {
-  arch: DecorArch;
-  tier: number;
-  x: number;
-  y: number;
-  z: number;
-  rot: number;
-  w: number;
-}
-
 export interface SettlementSite {
   id: number;
   name: string;
@@ -60,11 +35,8 @@ export interface SettlementSite {
   x: number;
   z: number;
   tier: SettlementTier;
-  pop: number;
   radius: number;
-  walls: number;
   isHarbor: boolean;
-  buildings: DecorBuilding[];
 }
 
 export interface Road {

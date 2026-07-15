@@ -36,7 +36,6 @@ describe('worldgen invariants', () => {
       expect(w.rivers.length).toBeGreaterThanOrEqual(1);
       expect(w.roads.length).toBeGreaterThanOrEqual(w.settlements.length - 1);
       for (const s of w.settlements) {
-        expect(s.buildings.length).toBeGreaterThan(0);
         expect(s.name.length).toBeGreaterThan(2);
         // sited on land
         expect(w.heightmap[s.j * GRID + s.i]).toBeGreaterThan(SEA_LEVEL);

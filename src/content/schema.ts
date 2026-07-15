@@ -26,10 +26,7 @@ export type Stat =
   | 'unitSpeed'
   | 'housingCap'
   | 'storageCap'
-  | 'wallHp'
-  | 'tradeIncome'
-  | 'popGrowth'
-  | 'unrest';
+  | 'popGrowth';
 
 export interface Modifier {
   stat: Stat;
@@ -53,7 +50,6 @@ export interface CultureDef {
   name: string;
   bonuses: Modifier[];
   uniqueUnit: UnitId;
-  uniqueBuilding?: BuildingId;
   uniqueTechs: TechId[];
   /** Consumed by render only. */
   architecture: {
@@ -94,9 +90,9 @@ export type BuildingFunction =
   | { kind: 'housing'; capacity: number }
   | { kind: 'production'; resource: ResourceId; workers: number; ratePerWorker: number }
   | { kind: 'training'; units: UnitId[] }
-  | { kind: 'research'; techs: 'military' | 'economy' | 'all' }
   | { kind: 'storage'; capacity: number }
-  | { kind: 'defense'; garrison: number; attack: number };
+  /** Fortification: each instance adds `hp` to the settlement's siege fort pool. */
+  | { kind: 'fort'; hp: number };
 
 export interface BuildingDef {
   id: BuildingId;
@@ -112,6 +108,11 @@ export interface BuildingDef {
   effects?: Modifier[];
   /** Needed the moment RTS free placement lands (M7+). */
   footprint: { w: number; d: number };
+  /**
+   * Seeded at settlement init and never player-buildable: hidden from the
+   * build menu, rejected by command gates, excluded from age-advance counts.
+   */
+  seedOnly?: true;
 }
 
 export interface UnitDef {

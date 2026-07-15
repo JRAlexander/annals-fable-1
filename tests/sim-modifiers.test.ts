@@ -62,10 +62,13 @@ describe('modifier resolution', () => {
     expect(realmWide).toBeCloseTo(11, 10); // union includes the other settlement's granary
   });
 
-  it('add modifiers apply before muls', () => {
+  it('add modifiers apply to the base (forging: flat +1 attack)', () => {
     const sim = cultureFree(1234);
-    sim.state.settlements[0].buildings.temple = 1; // unrest add −1
-    const v = resolveStat({ state: sim.state, realm: 0, settlement: 0 }, 5, { stat: 'unrest' });
-    expect(v).toBe(4);
+    sim.state.realms[0].researchedTechs.push('forging'); // unitAttack +1 (infantry)
+    const v = resolveStat({ state: sim.state, realm: 0 }, 8, { stat: 'unitAttack', unitTag: 'infantry' });
+    expect(v).toBe(9);
+    // scoped: ranged units are untouched by an infantry add
+    const ranged = resolveStat({ state: sim.state, realm: 0 }, 8, { stat: 'unitAttack', unitTag: 'ranged' });
+    expect(ranged).toBe(8);
   });
 });

@@ -13,7 +13,8 @@ import { generateWorld } from '../worldgen/world';
  * (localStorage is impure); the sim stays headless.
  */
 export interface SaveGame {
-  v: 1;
+  /** v2: the M9 economy rebase — v1 command logs replay into a different world. */
+  v: 2;
   seed: number;
   culture: CultureId;
   tick: number;
@@ -30,7 +31,7 @@ export function loadSave(seed: number, culture: CultureId): SaveGame | null {
     const raw = localStorage.getItem(key(seed, culture));
     if (!raw) return null;
     const save = JSON.parse(raw) as SaveGame;
-    if (save.v !== 1 || save.seed !== seed || save.culture !== culture) return null;
+    if (save.v !== 2 || save.seed !== seed || save.culture !== culture) return null;
     return save;
   } catch {
     return null;
@@ -48,7 +49,7 @@ export function anySaveFor(seed: number): SaveGame | null {
       const k = localStorage.key(i);
       if (k?.startsWith(`${KEY_PREFIX}${seed}.`)) {
         const save = JSON.parse(localStorage.getItem(k) ?? 'null') as SaveGame | null;
-        if (save?.v === 1 && save.seed === seed) return save;
+        if (save?.v === 2 && save.seed === seed) return save;
       }
     }
   } catch {
@@ -85,7 +86,7 @@ export function createRecorder(seed: number, culture: CultureId, initial: Issued
       commands.push(cmd);
     },
     autosave(tick: number, explored?: string): void {
-      writeSave({ v: 1, seed, culture, tick, commands, explored });
+      writeSave({ v: 2, seed, culture, tick, commands, explored });
     },
   };
 }

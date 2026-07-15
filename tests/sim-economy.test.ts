@@ -5,19 +5,21 @@ import { TICKS_PER_DAY } from '../src/sim/time';
 import { freshSim, run } from './helpers';
 
 describe('economy', () => {
-  it('all four stocks grow from the start over 200 ticks', () => {
+  it('a built-up settlement grows all four stocks (buildings are the economy)', () => {
     const sim = freshSim(1234);
-    const total = (which: 'start' | 'end', res: string) =>
-      sim.state.realms.reduce((t, r) => t + (r.stock as Record<string, number>)[res], 0);
-    const start = {
-      food: total('start', 'food'),
-      wood: total('start', 'wood'),
-      stone: total('start', 'stone'),
-      gold: total('start', 'gold'),
-    };
+    const realm = sim.state.realms[0];
+    const s = sim.state.settlements.find((x) => x.ownerRealm === 0);
+    if (!s) throw new Error('player owns nothing');
+    // stand the production chain up directly — the build pipeline is tested elsewhere
+    s.buildings.farm = 2;
+    s.buildings.lumberCamp = 2;
+    s.buildings.quarry = 2;
+    s.buildings.market = 2;
+    s.alloc = { farm: 0.4, forest: 0.3, quarry: 0.2, trade: 0.1 };
+    const start = { ...realm.stock };
     run(sim, 200);
     for (const r of ['food', 'wood', 'stone', 'gold'] as const) {
-      expect(total('end', r), r).toBeGreaterThan(start[r]);
+      expect(realm.stock[r], r).toBeGreaterThan(start[r]);
     }
   });
 
@@ -42,10 +44,16 @@ describe('economy', () => {
     expect(realm.stock.food).toBeCloseTo(expected, 6);
   });
 
-  it('stock never exceeds storage cap over 3000 ticks, and storageFull fires', () => {
+  it('stock never exceeds storage cap, and storageFull fires at the brim', () => {
     const sim = freshSim(7);
-    const events = run(sim, 3000);
+    run(sim, 1); // let the storage system derive the caps
     const realm = sim.state.realms[0];
+    const s = sim.state.settlements.find((x) => x.ownerRealm === 0);
+    if (!s) throw new Error('player owns nothing');
+    s.buildings.lumberCamp = 1;
+    s.alloc = { farm: 0.25, forest: 0.5, quarry: 0.15, trade: 0.1 };
+    realm.stock.wood = realm.storageCap.wood; // the yard is already full
+    const events = run(sim, 50);
     for (const r of ['food', 'wood', 'stone', 'gold'] as const) {
       expect(realm.stock[r]).toBeLessThanOrEqual(realm.storageCap[r]);
     }

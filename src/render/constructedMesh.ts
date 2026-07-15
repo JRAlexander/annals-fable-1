@@ -3,12 +3,15 @@ import { CULTURES } from '../content/cultures';
 import type { BuildingId } from '../content/schema';
 import type { GameState } from '../sim/state';
 import { terrainHeight } from '../worldgen/coords';
-import type { DecorArch, WorldData } from '../worldgen/types';
+import type { WorldData } from '../worldgen/types';
 import { MAX_HEIGHT, SEA_LEVEL } from '../worldgen/types';
-import { archGeo } from './buildingsMesh';
+import { archGeo, type DecorArch } from './buildingsMesh';
 
 /** Visual stand-ins from the ANNALS arch kit until buildings get bespoke models. */
 export const BUILDING_ARCH: Record<BuildingId, DecorArch> = {
+  townCenter: 'keep',
+  palisade: 'wall',
+  stoneWall: 'wall',
   house: 'house',
   farm: 'mill',
   lumberCamp: 'longhouse',
@@ -26,8 +29,8 @@ export const BUILDING_ARCH: Record<BuildingId, DecorArch> = {
   wonder: 'keep', // stands taller via per-instance scale below
 };
 
-/** The Wonder dwarfs everything else. */
-const ARCH_SCALE: Partial<Record<BuildingId, number>> = { wonder: 3.2 };
+/** The Wonder dwarfs everything else; town centers stand a head above; walls run long. */
+const ARCH_SCALE: Partial<Record<BuildingId, number>> = { wonder: 3.2, townCenter: 1.15, stoneWall: 1.4 };
 
 const GOLDEN_ANGLE = 2.399963;
 

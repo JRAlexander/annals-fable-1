@@ -1,14 +1,31 @@
 import type { BuildingDef, BuildingId } from './schema';
 
 /**
- * M2 building set: the founding-age economy buildings. The military/research
- * buildings (barracks, ranges, temple, university, walls, keep) arrive with
- * their milestones per docs/PLAN.md — content stays frozen until then.
+ * The building set. Since M9, buildings ARE the economy: free tier bases are
+ * near zero, so housing, storage, worker slots, and fortification HP all come
+ * from what stands in the town. Every settlement is seeded with a Town Center
+ * (seedOnly — never buildable) and a few houses; the rest is built.
  *
  * Production `workers` = extra worker slots the building adds to its job;
  * gather rates stay in content/economy.ts.
  */
 export const BUILDINGS: Record<BuildingId, BuildingDef> = {
+  townCenter: {
+    id: 'townCenter',
+    name: 'Town Center',
+    cost: {},
+    buildTime: 1,
+    hp: 800,
+    requiresAge: 'founding',
+    seedOnly: true,
+    functions: [
+      { kind: 'housing', capacity: 80 },
+      { kind: 'storage', capacity: 500 },
+      { kind: 'fort', hp: 300 },
+      { kind: 'training', units: ['militia'] },
+    ],
+    footprint: { w: 3, d: 3 },
+  },
   house: {
     id: 'house',
     name: 'House',
@@ -77,10 +94,7 @@ export const BUILDINGS: Record<BuildingId, BuildingDef> = {
     hp: 300,
     requiresAge: 'flowering',
     functions: [],
-    effects: [
-      { stat: 'popGrowth', op: 'mul', value: 1.15 },
-      { stat: 'unrest', op: 'add', value: -1 }, // inert until threats land (M6)
-    ],
+    effects: [{ stat: 'popGrowth', op: 'mul', value: 1.15 }],
     footprint: { w: 2, d: 3 },
   },
   granary: {
@@ -101,7 +115,7 @@ export const BUILDINGS: Record<BuildingId, BuildingDef> = {
     buildTime: 200,
     hp: 300,
     requiresAge: 'highKingdom',
-    functions: [{ kind: 'research', techs: 'all' }],
+    functions: [],
     effects: [{ stat: 'researchSpeed', op: 'mul', value: 1.25 }],
     footprint: { w: 3, d: 3 },
   },
@@ -124,8 +138,29 @@ export const BUILDINGS: Record<BuildingId, BuildingDef> = {
     hp: 1200,
     requiresAge: 'golden',
     requiresTechs: ['architecture'],
-    functions: [{ kind: 'defense', garrison: 20, attack: 8 }],
+    functions: [{ kind: 'fort', hp: 1200 }],
     footprint: { w: 3, d: 3 },
+  },
+  palisade: {
+    id: 'palisade',
+    name: 'Palisade',
+    cost: { wood: 100 },
+    buildTime: 120,
+    hp: 500,
+    requiresAge: 'founding',
+    functions: [{ kind: 'fort', hp: 500 }],
+    footprint: { w: 2, d: 1 },
+  },
+  stoneWall: {
+    id: 'stoneWall',
+    name: 'Stone Wall',
+    cost: { stone: 250 },
+    buildTime: 200,
+    hp: 1500,
+    requiresAge: 'highKingdom',
+    requiresTechs: ['masonry'],
+    functions: [{ kind: 'fort', hp: 1500 }],
+    footprint: { w: 2, d: 1 },
   },
   barracks: {
     id: 'barracks',

@@ -3,7 +3,6 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { terrainHeight } from '../worldgen/coords';
 import type { WorldData } from '../worldgen/types';
 import { WORLD_SIZE } from '../worldgen/types';
-import { buildBuildingInstances } from './buildingsMesh';
 import { buildRoadsMesh } from './roadsMesh';
 import { buildTerrainMesh } from './terrainMesh';
 import { buildTrees } from './treesMesh';
@@ -19,7 +18,7 @@ export interface SceneHandle {
   dispose: () => void;
 }
 
-/** Assemble the full M0 scene: terrain, water, sky, roads, trees, settlements. */
+/** Assemble the static scene: terrain, water, sky, roads, trees. Buildings are live (constructedMesh). */
 export function createScene(world: WorldData, canvas: HTMLCanvasElement): SceneHandle {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -40,7 +39,6 @@ export function createScene(world: WorldData, canvas: HTMLCanvasElement): SceneH
   scene.add(buildWater(world));
   scene.add(buildRoadsMesh(world));
   scene.add(buildTrees(world));
-  scene.add(buildBuildingInstances(world));
 
   const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 2, WORLD_SIZE * 8);
   const cap = world.capital;

@@ -89,12 +89,13 @@ describe('construction', () => {
 
   it('the queue is FIFO: second building starts after the first completes', () => {
     const sim = freshSim(1234);
+    const seeded = sim.state.settlements[0].buildings.house ?? 0; // capitals start housed (M9)
     run(sim, 1, { 0: [queue('house', 0, 0), queue('house', 0, 1)] });
     expect(sim.state.settlements[0].buildQueue).toHaveLength(2);
     run(sim, BUILDINGS.house.buildTime);
-    expect(sim.state.settlements[0].buildings.house).toBe(1);
+    expect(sim.state.settlements[0].buildings.house).toBe(seeded + 1);
     expect(sim.state.settlements[0].buildQueue).toHaveLength(1);
     run(sim, BUILDINGS.house.buildTime);
-    expect(sim.state.settlements[0].buildings.house).toBe(2);
+    expect(sim.state.settlements[0].buildings.house).toBe(seeded + 2);
   });
 });

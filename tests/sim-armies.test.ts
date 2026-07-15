@@ -50,7 +50,8 @@ describe('training', () => {
   it('rejects without a training building, age gate, or enough folk', () => {
     const sim = freshSim(1234);
     fund(sim);
-    let events = issueNow(sim, { kind: 'trainUnits', settlement: 0, unit: 'militia', count: 1 });
+    // spearmen need a barracks — the seeded town center only levies militia
+    let events = issueNow(sim, { kind: 'trainUnits', settlement: 0, unit: 'spearman', count: 1 });
     expect(events.some((e) => e.kind === 'commandRejected')).toBe(true); // no barracks
 
     issueNow(sim, { kind: 'queueBuilding', settlement: 0, building: 'barracks' });

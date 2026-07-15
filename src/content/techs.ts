@@ -120,6 +120,7 @@ export const TECHS: Record<TechId, TechDef> = {
     researchedAt: 'quarry',
     prereqs: [],
     effects: [{ stat: 'buildSpeed', op: 'mul', value: 1.15 }],
+    unlocks: { buildings: ['stoneWall'] },
   },
   herbalism: {
     id: 'herbalism',
@@ -171,10 +172,7 @@ export const TECHS: Record<TechId, TechDef> = {
     researchTime: 240,
     researchedAt: 'university',
     prereqs: ['masonry'],
-    effects: [
-      { stat: 'buildSpeed', op: 'mul', value: 1.15 },
-      { stat: 'wallHp', op: 'mul', value: 1.2 },
-    ],
+    effects: [{ stat: 'buildSpeed', op: 'mul', value: 1.15 }],
     unlocks: { buildings: ['keep'] },
   },
   warehousing: {

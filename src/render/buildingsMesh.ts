@@ -1,12 +1,28 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import type { DecorArch, DecorBuilding, WorldData } from '../worldgen/types';
 
 /**
- * ANNALS' low-poly building kit: each archetype is a merged, vertex-colored
- * body+roof geometry, drawn as one InstancedMesh per archetype. At M5 this
- * gets parameterized by CultureDef.architecture (palette + roof style).
+ * The low-poly building kit (inherited from ANNALS, now presentation-only):
+ * each archetype is a merged, vertex-colored body+roof geometry. Consumed by
+ * constructedMesh (sim buildings) and the placement ghost — the worldgen
+ * decorative scatter that once used it is gone (M9).
  */
+export const DECOR_ARCHS = [
+  'house',
+  'longhouse',
+  'shop',
+  'smithy',
+  'mill',
+  'granary',
+  'tavern',
+  'temple',
+  'warehouse',
+  'tower',
+  'wall',
+  'keep',
+] as const;
+export type DecorArch = (typeof DECOR_ARCHS)[number];
+
 function paint(g: THREE.BufferGeometry, col: number): THREE.BufferGeometry {
   const c = new THREE.Color(col);
   const n = g.attributes.position.count;
@@ -99,40 +115,4 @@ export function archGeo(arch: DecorArch): THREE.BufferGeometry {
   const merged = mergeGeometries(parts, false);
   merged.computeVertexNormals();
   return merged;
-}
-
-const _m = new THREE.Matrix4();
-const _q = new THREE.Quaternion();
-const _v = new THREE.Vector3();
-const _s = new THREE.Vector3();
-const _e = new THREE.Euler();
-
-export function buildBuildingInstances(world: WorldData): THREE.Group {
-  const group = new THREE.Group();
-  group.name = 'buildings';
-  const byArch = new Map<DecorArch, DecorBuilding[]>();
-  for (const s of world.settlements) {
-    for (const b of s.buildings) {
-      const list = byArch.get(b.arch) ?? [];
-      list.push(b);
-      byArch.set(b.arch, list);
-    }
-  }
-  for (const [arch, list] of byArch) {
-    const geo = archGeo(arch);
-    const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
-    const im = new THREE.InstancedMesh(geo, mat, list.length);
-    list.forEach((b, k) => {
-      const sc = b.tier * 0.55 + 0.6;
-      _v.set(b.x, b.y, b.z);
-      _e.set(0, b.rot, 0);
-      _q.setFromEuler(_e);
-      _s.set(b.w * sc, sc, b.w * sc);
-      _m.compose(_v, _q, _s);
-      im.setMatrixAt(k, _m);
-    });
-    im.instanceMatrix.needsUpdate = true;
-    group.add(im);
-  }
-  return group;
 }

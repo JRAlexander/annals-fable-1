@@ -6,14 +6,17 @@ export interface BuildingContrib {
   housing: number;
   storage: number;
   jobSlots: Record<WorkJob, number>;
+  /** Total fortification HP (town center + walls + keep) shielding a siege. */
+  fortHp: number;
 }
 
-/** What a settlement's completed buildings add to housing, storage, and worker slots. */
+/** What a settlement's completed buildings add to housing, storage, worker slots, and forts. */
 export function buildingContrib(s: SimSettlement): BuildingContrib {
   const contrib: BuildingContrib = {
     housing: 0,
     storage: 0,
     jobSlots: { farm: 0, forest: 0, quarry: 0, trade: 0 },
+    fortHp: 0,
   };
   for (const [id, rawCount] of Object.entries(s.buildings)) {
     const def = BUILDINGS[id];
@@ -32,12 +35,20 @@ export function buildingContrib(s: SimSettlement): BuildingContrib {
           if (job) contrib.jobSlots[job] += fn.workers * count;
           break;
         }
+        case 'fort':
+          contrib.fortHp += fn.hp * count;
+          break;
         default:
           break;
       }
     }
   }
   return contrib;
+}
+
+/** Siege fortification pool: what attackers must burn before the town bleeds fully. */
+export function settlementFortHp(s: SimSettlement): number {
+  return buildingContrib(s).fortHp;
 }
 
 /** Effective worker capacity for a job: what the land offers plus what was built. */

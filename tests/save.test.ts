@@ -25,7 +25,7 @@ describe('save & replay', () => {
     run(sim, 3000, byTick);
     const live = hashState(sim.state);
 
-    const save: SaveGame = { v: 1, seed: 1234, culture: 'valen', tick: 3000, commands: COMMANDS };
+    const save: SaveGame = { v: 2, seed: 1234, culture: 'valen', tick: 3000, commands: COMMANDS };
     const restored = replay(save);
     expect(hashState(restored.state)).toBe(live);
     expect(restored.state.tick).toBe(3000);
@@ -38,7 +38,7 @@ describe('save & replay', () => {
     run(straight, 2500);
 
     // world B: run 1500, "save", replay, run the remaining 1000 on the restored state
-    const save: SaveGame = { v: 1, seed: 42, culture: 'valen', tick: 1500, commands: [] };
+    const save: SaveGame = { v: 2, seed: 42, culture: 'valen', tick: 1500, commands: [] };
     const resumed = replay(save);
     for (let i = 0; i < 1000; i++) advanceTick(resumed.state, [], resumed.streams);
 
@@ -46,7 +46,7 @@ describe('save & replay', () => {
   });
 
   it('the save round-trips through JSON untouched', () => {
-    const save: SaveGame = { v: 1, seed: 7, culture: 'norvik', tick: 500, commands: COMMANDS };
+    const save: SaveGame = { v: 2, seed: 7, culture: 'norvik', tick: 500, commands: COMMANDS };
     const back = JSON.parse(JSON.stringify(save)) as SaveGame;
     expect(back).toEqual(save);
     const a = replay(save);
