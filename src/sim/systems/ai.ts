@@ -5,8 +5,38 @@ import { TECHS } from '../../content/techs';
 import { UNITS } from '../../content/units';
 import { totalUnits } from '../combat';
 import type { Command, IssuedCommand } from '../commands';
-import type { GameState } from '../state';
+import type { GameState, Realm, SimSettlement } from '../state';
 import { dateOf, isDayEnd } from '../time';
+
+/**
+ * One settlement's villager housekeeping: train toward a day-scaled target,
+ * keep every hand assigned by a food-first split. Pure — reads state, returns
+ * commands. The AI runs it on every rival town; the governor (M13) runs the
+ * SAME book on player towns that opted in.
+ */
+export function villagerEconomy(state: GameState, realm: Realm, s: SimSettlement, day: number): Command[] {
+  const out: Command[] = [];
+  const mine = state.settlements.filter((x) => x.ownerRealm === realm.id);
+  const realmPop = mine.reduce((t, x) => t + x.pop, 0);
+  const foodBuffer = realmPop * FOOD_PER_POP_DAY * 30; // a season in the granary
+  const site = state.world.settlements[s.id];
+  const have = state.villagers.filter((v) => v.settlement === s.id).length + s.villagerQueue.remaining;
+  const target = Math.min(30, STARTING_VILLAGERS[site.tier] + Math.floor(day / 90));
+  if (have < target && realm.stock.food > 150 && s.pop - 2 >= 30) {
+    out.push({ kind: 'trainVillagers', settlement: s.id, count: Math.min(2, target - have) });
+  }
+  // food first until the larder holds a season, then wood for the builders
+  const n = state.villagers.filter((v) => v.settlement === s.id).length;
+  const hungry = realm.stock.food < foodBuffer;
+  const split: Record<VillagerJob, number> = hungry
+    ? { farm: 0.5, wood: 0.3, stone: 0.1, gold: 0.1 }
+    : { farm: 0.3, wood: 0.4, stone: 0.2, gold: 0.1 };
+  for (const job of VILLAGER_JOBS) {
+    const want = Math.floor(n * split[job]);
+    if (s.jobTargets[job] !== want) out.push({ kind: 'assignVillagers', settlement: s.id, job, count: want });
+  }
+  return out;
+}
 
 /**
  * The rival realms' brain. Runs on the daily boundary and emits ordinary
@@ -30,27 +60,9 @@ export function aiSystem(state: GameState): IssuedCommand[] {
     const aggression = 0.6 + (0.4 * ((realm.id * 7919) % 10)) / 10;
     const day = dateOf(state.tick).day;
 
-    // --- villagers: train toward a growing target, keep them assigned (M12) ---
-    const realmPop = mine.reduce((t, s) => t + s.pop, 0);
-    const foodBuffer = realmPop * FOOD_PER_POP_DAY * 30; // a season in the granary
+    // --- villagers: the shared housekeeping book (M12, factored for M13) ---
     for (const s of mine) {
-      const site = state.world.settlements[s.id];
-      const have = state.villagers.filter((v) => v.settlement === s.id).length + s.villagerQueue.remaining;
-      const target = Math.min(30, STARTING_VILLAGERS[site.tier] + Math.floor(day / 90));
-      if (have < target && realm.stock.food > 150 && s.pop - 2 >= 30) {
-        issue({ kind: 'trainVillagers', settlement: s.id, count: Math.min(2, target - have) });
-      }
-      // food first until the larder holds a season, then wood for the builders
-      const n = state.villagers.filter((v) => v.settlement === s.id).length;
-      const hungry = realm.stock.food < foodBuffer;
-      const split: Record<VillagerJob, number> = hungry
-        ? { farm: 0.5, wood: 0.3, stone: 0.1, gold: 0.1 }
-        : { farm: 0.3, wood: 0.4, stone: 0.2, gold: 0.1 };
-      for (const job of VILLAGER_JOBS) {
-        const want = Math.floor(n * split[job]);
-        if (s.jobTargets[job] !== want)
-          issue({ kind: 'assignVillagers', settlement: s.id, job, count: want });
-      }
+      for (const cmd of villagerEconomy(state, realm, s, day)) issue(cmd);
     }
 
     // --- economy: one building at a time, in priority order ---

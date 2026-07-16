@@ -6,6 +6,7 @@ import type { GameState } from './state';
 import { aiSystem } from './systems/ai';
 import { armiesSystem } from './systems/armies';
 import { constructionSystem } from './systems/construction';
+import { governorSystem } from './systems/governor';
 import { populationSystem } from './systems/population';
 import { researchSystem } from './systems/research';
 import { storageSystem } from './systems/storage';
@@ -27,9 +28,10 @@ export function advanceTick(state: GameState, issued: IssuedCommand[], streams: 
   const events: SimEvent[] = [];
   if (state.tick === 0) events.push({ kind: 'realmFounded', realm: 0, tick: 0 });
 
-  // rival realms think on the daily boundary and speak the same command language
-  const aiCommands = aiSystem(state);
-  applyCommands(state, aiCommands.length ? [...issued, ...aiCommands] : issued, events);
+  // rival realms — and the player's governors (M13) — think on the daily
+  // boundary and speak the same command language, unrecorded
+  const auto = [...aiSystem(state), ...governorSystem(state)];
+  applyCommands(state, auto.length ? [...issued, ...auto] : issued, events);
   threatsSystem(state, events); // the wilds move before the day's marching
   constructionSystem(state, events);
   researchSystem(state, events);

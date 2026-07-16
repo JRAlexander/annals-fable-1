@@ -40,6 +40,13 @@ export interface Realm {
   atWarWith: RealmId[];
 }
 
+/** How an idle army occupies itself (M13). */
+export type ArmyStance = 'aggressive' | 'defensive' | 'standGround';
+export const ARMY_STANCES: readonly ArmyStance[] = ['aggressive', 'defensive', 'standGround'];
+
+/** Where a settlement sends its freshly trained soldiers (M13). */
+export type RallyTarget = { kind: 'army'; army: number } | { kind: 'point'; i: number; j: number };
+
 export interface SimSettlement {
   /** === WorldData.settlements[id].id — static site data (name/tier/position) lives there. */
   id: number;
@@ -64,6 +71,10 @@ export interface SimSettlement {
   lastLevyDay?: number;
   /** Buildings standing at player-chosen spots (subset of `buildings` counts). */
   placed: PlacedBuilding[];
+  /** Where fresh troops go (M13). Cleared with `delete` — undefined keys still hash. */
+  rally?: RallyTarget;
+  /** The governor runs this town's villager economy by the AI's book (M13). */
+  governor: boolean;
 }
 
 export interface ConstructionJob {
@@ -118,6 +129,10 @@ export interface Army {
   cellProgress: number;
   objective: ArmyObjective | null;
   phase: 'idle' | 'marching' | 'fighting' | 'returning';
+  /** Idle conduct (M13): hunt, intercept raids, or stand fast. */
+  stance: ArmyStance;
+  /** Cell a defensive army left to intercept — it walks back after (M13). Clear with `delete`. */
+  post?: { i: number; j: number };
   /** Strength when the current battle began — the rout threshold reference. */
   battleStartStrength: number;
   /** Accumulated damage to the besieged settlement's fortifications. */
@@ -335,6 +350,7 @@ export function initGameState(world: WorldData, playerCulture: CultureId = 'vale
       trainQueue: [],
       garrison: {},
       placed: seedPlacements(world, site, buildings),
+      governor: false,
     };
     s.popCap = HOUSING_BASE[site.tier] + buildingContrib(s).housing;
     return s;

@@ -1,4 +1,4 @@
-import { ENGAGE_RANGE } from '../../content/rts';
+import { DEFEND_RADIUS, ENGAGE_RANGE, STANCE_SIGHT } from '../../content/rts';
 import type { ResourceId, UnitId } from '../../content/schema';
 import {
   CAPTURE_VILLAGER_LOSS,
@@ -50,10 +50,74 @@ export function routePath(state: GameState, army: Army, toI: number, toJ: number
 }
 
 /** Hostile = different banners AND (a wild side, or an open war between realms). */
-function hostile(state: GameState, a: Army, b: Army): boolean {
+export function hostile(state: GameState, a: Army, b: Army): boolean {
   if (a.ownerRealm === b.ownerRealm) return false;
   if (a.ownerRealm === WILD_REALM || b.ownerRealm === WILD_REALM) return true;
   return state.realms[a.ownerRealm]?.atWarWith.includes(b.ownerRealm) ?? false;
+}
+
+/**
+ * Unit autonomy (M13): an idle army with no standing orders looks for work by
+ * its stance. Aggressive hunts any hostile in sight; defensive marches out to
+ * meet raiders bound for its realm's towns, remembering the post it left so
+ * it can walk back after. Deterministic: array order, strict distance compare
+ * (first-lowest-id wins ties), no rng.
+ */
+function autonomyScan(state: GameState, army: Army): void {
+  if (army.ownerRealm === WILD_REALM || army.defending) return;
+  if (army.objective) return; // standing orders are not the scan's to override
+
+  let quarry: Army | undefined;
+  let bestD = Number.POSITIVE_INFINITY;
+  if (army.stance === 'aggressive') {
+    const reach = STANCE_SIGHT * STANCE_SIGHT;
+    for (const other of state.armies) {
+      if (other.id === army.id || totalUnits(other.units) <= 0) continue;
+      if (!hostile(state, army, other)) continue;
+      const d = (other.x - army.x) ** 2 + (other.z - army.z) ** 2;
+      if (d <= reach && d < bestD) {
+        bestD = d;
+        quarry = other;
+      }
+    }
+  } else if (army.stance === 'defensive') {
+    const reach = DEFEND_RADIUS * DEFEND_RADIUS;
+    for (const other of state.armies) {
+      if (totalUnits(other.units) <= 0) continue;
+      if (other.ownerRealm !== WILD_REALM || other.objective?.kind !== 'attackSettlement') continue;
+      if (state.settlements[other.objective.settlement]?.ownerRealm !== army.ownerRealm) continue;
+      const d = (other.x - army.x) ** 2 + (other.z - army.z) ** 2;
+      if (d <= reach && d < bestD) {
+        bestD = d;
+        quarry = other;
+      }
+    }
+  }
+
+  if (quarry) {
+    // a defender remembers where it stood; the hunt is a round trip
+    if (army.stance === 'defensive' && !army.post) {
+      const { i, j } = worldToCell(army.x, army.z);
+      army.post = { i, j };
+    }
+    army.objective = { kind: 'attackArmy', army: quarry.id };
+    army.phase = 'marching';
+    const { i, j } = worldToCell(quarry.x, quarry.z);
+    routePath(state, army, i, j);
+    return;
+  }
+
+  // nothing to fight: walk back to the post, and stand down on arrival
+  if (army.post) {
+    const { i, j } = worldToCell(army.x, army.z);
+    if (i === army.post.i && j === army.post.j) {
+      delete army.post;
+    } else {
+      army.objective = { kind: 'moveTo', i: army.post.i, j: army.post.j };
+      army.phase = 'marching';
+      routePath(state, army, army.post.i, army.post.j);
+    }
+  }
 }
 
 /**
@@ -190,6 +254,9 @@ function settlementFalls(state: GameState, army: Army, target: SimSettlement, ou
   killVillagers(state, target.id, CAPTURE_VILLAGER_LOSS);
   target.garrison = {};
   target.trainQueue = [];
+  // the captor's writ replaces the old orders (M13)
+  delete target.rally;
+  target.governor = false;
   out.push({ kind: 'settlementCaptured', settlement: target.id, by: army.ownerRealm, from });
   army.engagedWith = undefined;
   goHomeward(state, army);
@@ -221,6 +288,7 @@ export function armiesSystem(state: GameState, out: SimEvent[]): void {
           const t = state.settlements[o.settlement];
           if (!t || t.ownerRealm === army.ownerRealm) goHomeward(state, army);
         }
+        if (army.phase === 'idle') autonomyScan(state, army); // stance work (M13)
         survivors.push(army);
         break;
       }

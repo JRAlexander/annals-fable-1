@@ -48,6 +48,7 @@ function conjureWildArmy(sim: SimRun, units: Record<string, number>, x: number, 
     cellProgress: 0,
     objective: null,
     phase: 'idle',
+    stance: 'standGround',
     battleStartStrength: 0,
   };
   sim.state.armies.push(army);
