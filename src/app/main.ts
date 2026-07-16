@@ -16,9 +16,12 @@ import { createArmyPanel } from '../ui/armyPanel';
 import { createBuildMenu } from '../ui/buildMenu';
 import { createChronicle } from '../ui/chronicle';
 import { createHud } from '../ui/hud';
+import { createMinimap } from '../ui/minimap';
 import { createTechMenu } from '../ui/techMenu';
 import { createToasts } from '../ui/toasts';
 import { generateWorld } from '../worldgen/world';
+import { createCameraControls } from './cameraControls';
+import { createControlGroups } from './controlGroups';
 import { createInput, describeSelection } from './input';
 import { SPEEDS, type Speed, startLoop } from './loop';
 import { anySaveFor, clearSave, createRecorder, loadSave, replay } from './save';
@@ -111,8 +114,9 @@ function pickCulture(el: HTMLElement, seed: number): Promise<{ culture: CultureI
     box.insertAdjacentHTML(
       'beforeend',
       `<div class="cp-help">Win by taking every rival capital, or by raising a Wonder and holding it. Lose your capital, lose everything.<br>
-       Build (right panel) · Army &amp; Diplomacy (middle panel) · Tech (T) · Speed 1/2/3, Space pauses. The game saves itself each day.<br>
-       Command armies on the map: left-click or drag to select, right-click to march or attack, middle-drag to orbit.</div>`,
+       Build (right panel) · Army &amp; Diplomacy (middle panel) · Tech (T) · Speed Z/X/C, Space pauses. The game saves itself each day.<br>
+       Command armies on the map: left-click or drag to select, right-click to march or attack, middle-drag to orbit.<br>
+       WASD or screen edges pan; the minimap (bottom right) jumps the camera; Ctrl+1–9 banks an army group, 1–9 recalls it.</div>`,
     );
     el.appendChild(box);
   });
@@ -158,6 +162,7 @@ async function boot(): Promise<void> {
   const endEl = document.getElementById('endscreen')!;
   const selBoxEl = document.getElementById('selbox')!;
   const selChipEl = document.getElementById('selchip')!;
+  const minimapEl = document.getElementById('minimap')!;
 
   const seed = seedFromHash();
   const world = generateWorld(seed);
@@ -223,7 +228,19 @@ async function boot(): Promise<void> {
 
   const chronicle = createChronicle(chronicleEl);
   if (restoredChronicle.length) chronicle.push(restoredChronicle);
-  const toasts = createToasts(toastsEl);
+  const cameraControls = createCameraControls(scene, world);
+  const minimap = createMinimap(minimapEl, world, {
+    scene,
+    fogMask,
+    fogVersion: () => fogQueries.version,
+    visibleAt: fogQueries.visibleAt,
+    exploredAt: fogQueries.exploredAt,
+    onJump: (x, z) => cameraControls.jumpTo(x, z),
+  });
+  const toasts = createToasts(toastsEl, {
+    jumpTo: (x, z) => cameraControls.jumpTo(x, z),
+    ping: (x, z) => minimap.ping(x, z),
+  });
   const buildMenu = createBuildMenu(buildMenuEl, enqueue, (building) => input.setPlacement(building));
   const armyPanel = createArmyPanel(armyPanelEl, enqueue, culture);
   const techMenu = createTechMenu(techMenuEl, enqueue, culture);
@@ -287,6 +304,8 @@ async function boot(): Promise<void> {
         selChipEl.textContent = describeSelection(state, input.selection, input.unitSelection);
       else if (selChipEl.style.display !== 'none') selChipEl.style.display = 'none';
       effects.update(dtMs, loop.getSpeed());
+      minimap.update(state);
+      cameraControls.update(dtMs); // before render(), whose controls.update applies damping
       scene.render();
     },
   });
@@ -295,6 +314,12 @@ async function boot(): Promise<void> {
     (s) => loop.setSpeed(s),
     () => techMenu.toggle(),
   );
+  const controlGroups = createControlGroups({
+    state,
+    input,
+    jumpTo: (x, z) => cameraControls.jumpTo(x, z),
+  });
+  void controlGroups; // owns its own listeners; handle kept for symmetry
 
   // debug/verification hook — the sim is still command-driven; this is a window for tests
   (window as unknown as Record<string, unknown>).__realms = {
@@ -303,15 +328,20 @@ async function boot(): Promise<void> {
     scene,
     fog: fogQueries,
     effects,
+    input,
+    cameraControls,
+    minimap,
   };
 
   window.addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return; // browser shortcuts pass through
     if (e.code === 'Space') {
       e.preventDefault();
       loop.setSpeed(loop.getSpeed() === 0 ? 5 : 0);
     }
     if (e.code === 'KeyT') techMenu.toggle();
-    const idx = ['Digit1', 'Digit2', 'Digit3'].indexOf(e.code);
+    // digits belong to control groups now (M11) — speed lives on Z/X/C
+    const idx = ['KeyZ', 'KeyX', 'KeyC'].indexOf(e.code);
     if (idx >= 0) loop.setSpeed(SPEEDS[idx + 1] as Speed);
   });
 }

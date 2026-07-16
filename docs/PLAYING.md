@@ -97,11 +97,28 @@ coming. (The chronicle's annalist, as ever, knows all — read it.)
   away from the line, send half the host home, screen a raid with a picket — every
   soldier is a real entity with its own place in the column.
 - **Right click** with an army selected: open ground → **march there and hold**; an enemy army → **attack it**; a bandit camp → **assault it**; an enemy town (at war) → **besiege it**.
-- **Middle-drag** orbits the camera, **scroll** zooms.
+- **Middle-drag** orbits the camera, **scroll** zooms, **WASD** (or pushing the
+  pointer to a screen edge) pans.
+- The **minimap** (bottom right) shows the world through your fog: gold squares
+  are your towns, ember ones everyone else's, dots are armies. **Click or drag
+  it to jump the camera.** When trouble starts — a raid, a siege, your army
+  ambushed — a red **alert** appears up top and a ping pulses on the minimap;
+  **click the alert to jump straight to the fighting**.
+- **Control groups**: select armies, press `Ctrl+1`…`9` to bank them, a bare
+  digit to recall, and double-tap the digit to center the camera on them.
+  (Groups hold armies, not box-selected soldiers, and reset on reload.)
 - Hostile armies that meet in the open **fight a field battle** — you can intercept raiders and invading armies before they reach your towns (and your token forces can be cut down on the road, so escort matters).
 - The panel dropdown still works for everything if you prefer menus.
 
-**Keys**: `Space` pause, `1`/`2`/`3` speeds, `T` tech tree, `Esc` clear selection.
+| Key | Action |
+|---|---|
+| `Space` | pause / resume |
+| `Z` / `X` / `C` | speed 1× / 4× / 12× |
+| `W` `A` `S` `D` | pan camera (screen edges scroll too) |
+| `1`–`9` | recall control group (double-tap centers camera) |
+| `Ctrl+1`–`9` | assign selected armies to a group |
+| `T` | tech tree |
+| `Esc` | cancel placement / clear selection |
 
 ## Your first hour, step by step
 
