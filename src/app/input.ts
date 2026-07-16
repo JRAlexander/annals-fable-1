@@ -22,6 +22,8 @@ export interface InputHandle {
   readonly unitSelection: Set<number>;
   /** Arm (or disarm with null) free-placement mode for a building (M7b). */
   setPlacement(building: BuildingId | null): void;
+  /** Programmatic army selection (control-group recall, M11). Fires onSelection. */
+  selectArmies(ids: number[]): void;
   dispose(): void;
 }
 
@@ -367,6 +369,7 @@ export function createInput(opts: {
     selection,
     unitSelection,
     setPlacement,
+    selectArmies: setSelection,
     dispose() {
       canvas.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('pointermove', onPointerMove);
