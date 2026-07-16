@@ -1,13 +1,12 @@
 import type { BuildingDef, BuildingId } from './schema';
 
 /**
- * The building set. Since M9, buildings ARE the economy: free tier bases are
- * near zero, so housing, storage, worker slots, and fortification HP all come
- * from what stands in the town. Every settlement is seeded with a Town Center
- * (seedOnly — never buildable) and a few houses; the rest is built.
- *
- * Production `workers` = extra worker slots the building adds to its job;
- * gather rates stay in content/economy.ts.
+ * The building set. Since M9, buildings ARE the economy; since M12 the
+ * economy is walked by VILLAGERS: `workplace` buildings offer slots to work
+ * at (farms, markets), `dropoff` buildings receive the carried loads (town
+ * center always; lumber camps and quarries near the resource shorten trips —
+ * placement IS the gather rate). Every settlement is seeded with a Town
+ * Center (seedOnly — never buildable) and a few houses; the rest is built.
  */
 export const BUILDINGS: Record<BuildingId, BuildingDef> = {
   townCenter: {
@@ -21,6 +20,7 @@ export const BUILDINGS: Record<BuildingId, BuildingDef> = {
     functions: [
       { kind: 'housing', capacity: 80 },
       { kind: 'storage', capacity: 500 },
+      { kind: 'dropoff', resources: ['food', 'wood', 'stone', 'gold'] },
       { kind: 'fort', hp: 300 },
       { kind: 'training', units: ['militia'] },
     ],
@@ -43,7 +43,7 @@ export const BUILDINGS: Record<BuildingId, BuildingDef> = {
     buildTime: 80,
     hp: 150,
     requiresAge: 'founding',
-    functions: [{ kind: 'production', resource: 'food', workers: 25, ratePerWorker: 0.02 }],
+    functions: [{ kind: 'workplace', resource: 'food', slots: 5 }],
     footprint: { w: 2, d: 2 },
   },
   lumberCamp: {
@@ -53,7 +53,7 @@ export const BUILDINGS: Record<BuildingId, BuildingDef> = {
     buildTime: 60,
     hp: 150,
     requiresAge: 'founding',
-    functions: [{ kind: 'production', resource: 'wood', workers: 20, ratePerWorker: 0.012 }],
+    functions: [{ kind: 'dropoff', resources: ['wood'] }],
     footprint: { w: 2, d: 1 },
   },
   quarry: {
@@ -63,7 +63,7 @@ export const BUILDINGS: Record<BuildingId, BuildingDef> = {
     buildTime: 100,
     hp: 200,
     requiresAge: 'founding',
-    functions: [{ kind: 'production', resource: 'stone', workers: 20, ratePerWorker: 0.008 }],
+    functions: [{ kind: 'dropoff', resources: ['stone'] }],
     footprint: { w: 2, d: 2 },
   },
   market: {
@@ -73,7 +73,7 @@ export const BUILDINGS: Record<BuildingId, BuildingDef> = {
     buildTime: 90,
     hp: 180,
     requiresAge: 'founding',
-    functions: [{ kind: 'production', resource: 'gold', workers: 15, ratePerWorker: 0.01 }],
+    functions: [{ kind: 'workplace', resource: 'gold', slots: 5 }],
     footprint: { w: 2, d: 2 },
   },
   storehouse: {
@@ -83,7 +83,10 @@ export const BUILDINGS: Record<BuildingId, BuildingDef> = {
     buildTime: 100,
     hp: 250,
     requiresAge: 'founding',
-    functions: [{ kind: 'storage', capacity: 500 }],
+    functions: [
+      { kind: 'storage', capacity: 500 },
+      { kind: 'dropoff', resources: ['food', 'wood', 'stone', 'gold'] },
+    ],
     footprint: { w: 2, d: 2 },
   },
   temple: {
@@ -104,7 +107,10 @@ export const BUILDINGS: Record<BuildingId, BuildingDef> = {
     buildTime: 110,
     hp: 220,
     requiresAge: 'flowering',
-    functions: [{ kind: 'storage', capacity: 400 }],
+    functions: [
+      { kind: 'storage', capacity: 400 },
+      { kind: 'dropoff', resources: ['food'] },
+    ],
     effects: [{ stat: 'gatherRate', op: 'mul', value: 1.1, resource: 'food' }],
     footprint: { w: 2, d: 2 },
   },
@@ -127,7 +133,7 @@ export const BUILDINGS: Record<BuildingId, BuildingDef> = {
     hp: 280,
     requiresAge: 'highKingdom',
     requiresTechs: ['caravans'],
-    functions: [{ kind: 'production', resource: 'gold', workers: 20, ratePerWorker: 0.01 }],
+    functions: [{ kind: 'workplace', resource: 'gold', slots: 5 }],
     footprint: { w: 2, d: 2 },
   },
   keep: {

@@ -1,35 +1,53 @@
-import type { BuildingId, ResourceId } from './schema';
+import type { BuildingId, Cost, ResourceId } from './schema';
 
 /**
- * Economy tunables — data only. Rates are per worker per TICK unless noted.
- * Every consumer routes these through sim/modifiers.resolveStat, so techs and
- * culture bonuses modify them without touching this file.
+ * Economy tunables — data only. Every consumer routes these through
+ * sim/modifiers.resolveStat, so techs and culture bonuses modify them
+ * without touching this file.
  *
- * Since M9 the free tier bases are deliberately TINY: housing, storage, and
- * worker slots come from constructed buildings (see content/buildings.ts).
+ * Since M12 the economy is VILLAGERS: entities that walk to a workplace or
+ * resource, gather, and carry the load home to a dropoff building. The
+ * gather rate emerges from trip distance — place your lumber camp by the
+ * forest and your wood income rises.
  */
 
-export type WorkJob = 'farm' | 'forest' | 'quarry' | 'trade';
+export type VillagerJob = 'farm' | 'wood' | 'stone' | 'gold';
 
-/** Fixed iteration order — deterministic rounding/spill depends on it. */
-export const WORK_JOBS: readonly WorkJob[] = ['farm', 'forest', 'quarry', 'trade'];
+/** Fixed iteration order — deterministic reconciliation depends on it. */
+export const VILLAGER_JOBS: readonly VillagerJob[] = ['farm', 'wood', 'stone', 'gold'];
 
-export const JOB_RESOURCE: Record<WorkJob, ResourceId> = {
+export const JOB_RESOURCE: Record<VillagerJob, ResourceId> = {
   farm: 'food',
-  forest: 'wood',
-  quarry: 'stone',
-  trade: 'gold',
+  wood: 'wood',
+  stone: 'stone',
+  gold: 'gold',
 };
 
-export const BASE_GATHER_PER_TICK: Record<WorkJob, number> = {
-  farm: 0.02,
-  forest: 0.012,
-  quarry: 0.008,
-  trade: 0.01,
+/** Training price of one villager, paid at the town center. */
+export const VILLAGER_COST: Cost = { food: 40 };
+/** Ticks to train one villager (1.5 days). */
+export const VILLAGER_TRAIN_TICKS = 15;
+/** World units a villager walks per tick. */
+export const VILLAGER_SPEED = 16;
+/** Base load per completed gather — gatherRate modifiers multiply this. */
+export const CARRY_CAPACITY = 10;
+/** Ticks spent working before a load is full. */
+export const GATHER_TICKS: Record<VillagerJob, number> = {
+  farm: 6,
+  wood: 8,
+  stone: 10,
+  gold: 8,
 };
-
-/** Fraction of a settlement's population that works. */
-export const WORK_RATIO = 0.6;
+/** Villagers each settlement begins with. */
+export const STARTING_VILLAGERS: Record<'capital' | 'town' | 'village', number> = {
+  capital: 12,
+  town: 8,
+  village: 5,
+};
+/** How far (in grid cells, Chebyshev) villagers look for forest/rock. */
+export const RESOURCE_SEARCH_CELLS = 28;
+/** Idle villagers drift home and stand within this radius of the town center. */
+export const IDLE_HOME_RADIUS = 15;
 
 /** Food eaten per person per day. */
 export const FOOD_PER_POP_DAY = 0.02;
@@ -80,33 +98,3 @@ export const STARTING_STOCK: Record<ResourceId, number> = {
 
 /** Pop-count thresholds worth a chronicle entry. */
 export const POP_MILESTONES: readonly number[] = [100, 250, 500, 1000, 2500, 5000];
-
-/**
- * siteCapacity: worker slots contributed by one nearby cell of each biome.
- * Deliberately scarce relative to workforce — the land offers a living, not
- * a livelihood; constructed farms/camps/quarries (which ADD slots) are where
- * the economy actually comes from.
- */
-export const SLOTS_PER_CELL = {
-  farmland: 1,
-  meadow: 0,
-  deciduous: 1,
-  pine: 1,
-  rock: 1,
-} as const;
-
-/** Floor on terrain-derived slots — no settlement starts unable to feed itself at all. */
-export const MIN_SITE_SLOTS: Record<'farm' | 'forest' | 'quarry', number> = {
-  farm: 8,
-  forest: 4,
-  quarry: 2,
-};
-
-/** Trade slots: settlement base by tier, plus harbor and per-road bonuses. */
-export const TRADE_BASE: Record<'capital' | 'town' | 'village', number> = {
-  capital: 12,
-  town: 6,
-  village: 2,
-};
-export const TRADE_HARBOR_BONUS = 10;
-export const TRADE_PER_ROAD = 4;

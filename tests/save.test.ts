@@ -5,16 +5,12 @@ import { hashState } from '../src/sim/hash';
 import { advanceTick } from '../src/sim/tick';
 import { freshSim, run } from './helpers';
 
-/** A short reign: allocate workers, build, train — then the realm sleeps. */
+/** A short reign: raise villagers, assign them, build, train — then the realm sleeps. */
 const COMMANDS: IssuedCommand[] = [
-  {
-    tick: 200,
-    realm: 0,
-    seq: 0,
-    cmd: { kind: 'setWorkerAllocation', settlement: 0, alloc: { farm: 3, forest: 2, quarry: 1, trade: 1 } },
-  },
-  { tick: 400, realm: 0, seq: 1, cmd: { kind: 'queueBuilding', settlement: 0, building: 'barracks' } },
-  { tick: 1200, realm: 0, seq: 2, cmd: { kind: 'trainUnits', settlement: 0, unit: 'militia', count: 5 } },
+  { tick: 200, realm: 0, seq: 0, cmd: { kind: 'trainVillagers', settlement: 0, count: 3 } },
+  { tick: 300, realm: 0, seq: 1, cmd: { kind: 'assignVillagers', settlement: 0, job: 'wood', count: 6 } },
+  { tick: 400, realm: 0, seq: 2, cmd: { kind: 'queueBuilding', settlement: 0, building: 'barracks' } },
+  { tick: 1200, realm: 0, seq: 3, cmd: { kind: 'trainUnits', settlement: 0, unit: 'militia', count: 5 } },
 ];
 
 describe('save & replay', () => {
@@ -25,7 +21,7 @@ describe('save & replay', () => {
     run(sim, 3000, byTick);
     const live = hashState(sim.state);
 
-    const save: SaveGame = { v: 2, seed: 1234, culture: 'valen', tick: 3000, commands: COMMANDS };
+    const save: SaveGame = { v: 3, seed: 1234, culture: 'valen', tick: 3000, commands: COMMANDS };
     const restored = replay(save);
     expect(hashState(restored.state)).toBe(live);
     expect(restored.state.tick).toBe(3000);
@@ -38,7 +34,7 @@ describe('save & replay', () => {
     run(straight, 2500);
 
     // world B: run 1500, "save", replay, run the remaining 1000 on the restored state
-    const save: SaveGame = { v: 2, seed: 42, culture: 'valen', tick: 1500, commands: [] };
+    const save: SaveGame = { v: 3, seed: 42, culture: 'valen', tick: 1500, commands: [] };
     const resumed = replay(save);
     for (let i = 0; i < 1000; i++) advanceTick(resumed.state, [], resumed.streams);
 
@@ -46,7 +42,7 @@ describe('save & replay', () => {
   });
 
   it('the save round-trips through JSON untouched', () => {
-    const save: SaveGame = { v: 2, seed: 7, culture: 'norvik', tick: 500, commands: COMMANDS };
+    const save: SaveGame = { v: 3, seed: 7, culture: 'norvik', tick: 500, commands: COMMANDS };
     const back = JSON.parse(JSON.stringify(save)) as SaveGame;
     expect(back).toEqual(save);
     const a = replay(save);

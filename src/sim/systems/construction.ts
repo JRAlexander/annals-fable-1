@@ -1,6 +1,7 @@
 import { BUILDINGS } from '../../content/buildings';
 import type { SimEvent } from '../events';
 import { resolveStat } from '../modifiers';
+import { ringSpot } from '../placement';
 import type { GameState } from '../state';
 
 /**
@@ -25,8 +26,10 @@ export function constructionSystem(state: GameState, out: SimEvent[]): void {
     if (job.progress >= def.buildTime) {
       s.buildQueue.shift();
       s.buildings[def.id] = (s.buildings[def.id] ?? 0) + 1;
-      // a player-placed building keeps its chosen ground (M7b)
-      if (job.at) s.placed.push({ building: def.id, x: job.at.x, z: job.at.z });
+      // every building stands SOMEWHERE now (M12: villagers walk to it) —
+      // player-chosen ground, or the next deterministic ring spot
+      const at = job.at ?? ringSpot(state.world, s.id, s.placed.length);
+      s.placed.push({ building: def.id, x: at.x, z: at.z });
       out.push({ kind: 'buildingCompleted', settlement: s.id, building: def.id });
     }
   }

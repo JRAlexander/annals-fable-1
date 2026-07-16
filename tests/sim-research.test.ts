@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BASE_GATHER_PER_TICK,
+  CARRY_CAPACITY,
   HOUSING_BASE,
   JOB_RESOURCE,
   STORAGE_BASE,
-  WORK_JOBS,
+  VILLAGER_JOBS,
 } from '../src/content/economy';
 import { TECHS } from '../src/content/techs';
 import type { IssuedCommand } from '../src/sim/commands';
@@ -47,10 +47,10 @@ describe('research', () => {
       sim.state.realms[0].researchedTechs = [];
       const ctx = { state: sim.state, realm: 0 };
       const queries = [
-        ...WORK_JOBS.map((j) => ({
+        ...VILLAGER_JOBS.map((j) => ({
           label: `gather:${j}`,
           q: { stat: 'gatherRate' as const, resource: JOB_RESOURCE[j] },
-          base: BASE_GATHER_PER_TICK[j],
+          base: CARRY_CAPACITY,
         })),
         { label: 'housing', q: { stat: 'housingCap' as const }, base: HOUSING_BASE.capital },
         { label: 'storage', q: { stat: 'storageCap' as const }, base: STORAGE_BASE.capital },

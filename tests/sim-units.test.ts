@@ -128,10 +128,17 @@ describe('the unit store (M8a)', () => {
   });
 
   it('a save with moveUnits commands replays to the identical hash', () => {
-    // fully replayable script: build, train, form, then split — no state pokes
+    // fully replayable script: farm (the realm must EAT now), build, train,
+    // form, then split — no state pokes
     const capitalId = freshSim(42).state.world.capital.id;
     const script: IssuedCommand[] = [];
     let seq = 0;
+    script.push({
+      tick: 5,
+      realm: 0,
+      seq: seq++,
+      cmd: { kind: 'queueBuilding', settlement: capitalId, building: 'farm' },
+    });
     script.push({
       tick: 10,
       realm: 0,
@@ -170,7 +177,7 @@ describe('the unit store (M8a)', () => {
     };
     run(live, 350, { 1650: [splitCmd] });
 
-    const save: SaveGame = { v: 2, seed: 42, culture: 'valen', tick: 2000, commands: [...script, splitCmd] };
+    const save: SaveGame = { v: 3, seed: 42, culture: 'valen', tick: 2000, commands: [...script, splitCmd] };
     const restored = replay(save);
     expect(hashState(restored.state)).toBe(hashState(live.state));
   });

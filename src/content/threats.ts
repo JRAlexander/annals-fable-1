@@ -20,6 +20,10 @@ export const RAID_SIZE_MULT: Record<string, number> = {
 export const RAID_PLUNDER = 0.15;
 /** Population lost to a successful raid. */
 export const RAID_POP_MULT = 0.97;
+/** Fraction of a settlement's villagers killed by a successful raid (M12). */
+export const RAID_VILLAGER_LOSS = 0.2;
+/** Fraction of villagers killed when a settlement is captured; the rest convert. */
+export const CAPTURE_VILLAGER_LOSS = 0.1;
 
 /** Days a completed Wonder must stand before the bells ring victory. */
 export const WONDER_DAYS = 60;

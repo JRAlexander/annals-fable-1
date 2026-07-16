@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CULTURES } from '../content/cultures';
 import type { BuildingId } from '../content/schema';
+import { ringSpot } from '../sim/placement';
 import type { GameState } from '../sim/state';
 import { terrainHeight } from '../worldgen/coords';
 import type { WorldData } from '../worldgen/types';
@@ -40,46 +41,6 @@ export const ARCH_SCALE: Partial<Record<BuildingId, number>> = {
 const WALL_IDS = new Set<BuildingId>(['palisade', 'stoneWall']);
 
 const GOLDEN_ANGLE = 2.399963;
-
-/**
- * Where the k-th auto-placed (non-`placed`) building of a settlement stands:
- * a golden-angle ring outside the town, walking outward off any water. Shared
- * with the scaffold layer so in-progress buildings rise exactly where the
- * finished ones will land.
- */
-export function ringPlacement(
-  world: WorldData,
-  siteIdx: number,
-  k: number,
-): { x: number; z: number; y: number; rot: number } {
-  const site = world.settlements[siteIdx];
-  const radius = site.radius * 1.12;
-  const angle = site.id * 1.7 + k * GOLDEN_ANGLE;
-  for (let attempt = 0; attempt < 8; attempt++) {
-    const x = site.x + Math.cos(angle) * (radius + attempt * 24);
-    const z = site.z + Math.sin(angle) * (radius + attempt * 24);
-    const y = terrainHeight(world.heightmap, x, z);
-    if (y > SEA_LEVEL * MAX_HEIGHT + 2) return { x, z, y, rot: angle + Math.PI / 2 };
-  }
-  const y = terrainHeight(world.heightmap, site.x, site.z);
-  return { x: site.x, z: site.z, y, rot: 0 };
-}
-
-/**
- * The ring index the NEXT auto-placed building of `building` would take,
- * given the current per-id ring counts: ids before it (in BUILDING_ARCH
- * order) occupy the leading slots, its own existing instances the next.
- * Wall ids never join the ring.
- */
-export function ringIndexFor(counts: Partial<Record<BuildingId, number>>, building: BuildingId): number {
-  let k = 0;
-  for (const id of Object.keys(BUILDING_ARCH) as BuildingId[]) {
-    if (WALL_IDS.has(id)) continue;
-    if (id === building) return k + (counts[id] ?? 0);
-    k += counts[id] ?? 0;
-  }
-  return k;
-}
 
 /**
  * Renders player-constructed buildings in a ring outside each settlement's
@@ -161,7 +122,7 @@ export function createConstructed(
           for (let i = 0; i < n; i++) {
             const arch = BUILDING_ARCH[id];
             const list = byArch.get(arch) ?? [];
-            list.push({ ...ringPlacement(world, s.id, k++), tint });
+            list.push({ ...ringSpot(world, s.id, k++), tint });
             byArch.set(arch, list);
           }
         }

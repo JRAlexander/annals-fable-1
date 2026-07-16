@@ -2,18 +2,18 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { BUILDINGS } from '../content/buildings';
 import { CULTURES } from '../content/cultures';
-import type { BuildingId } from '../content/schema';
+import { ringSpot } from '../sim/placement';
 import type { GameState } from '../sim/state';
 import { terrainHeight } from '../worldgen/coords';
 import type { WorldData } from '../worldgen/types';
 import { archGeo, type DecorArch, paint } from './buildingsMesh';
-import { ARCH_SCALE, BUILDING_ARCH, ringIndexFor, ringPlacement } from './constructedMesh';
+import { ARCH_SCALE, BUILDING_ARCH } from './constructedMesh';
 
 /**
  * Construction sites (M10): every queued building shows a wooden scaffold
  * frame with the building itself rising inside it as `progress` climbs.
  * Player-placed jobs stand at their chosen spot; AI/auto jobs at the exact
- * ring slot the finished building will take (shared ringPlacement math, so
+ * ring slot the finished building will take (the sim's own ringSpot math, so
  * the scaffold and the finished building can never disagree).
  *
  * Layout recomputes only when the queues change; the per-frame path just
@@ -103,14 +103,9 @@ export function createScaffolds(scene: THREE.Scene, world: WorldData): Scaffolds
       if (s.ownerRealm !== 0 && fog && !fog.exploredAt(site.x, site.z)) continue;
       const tint = cultureTint(state.realms[s.ownerRealm]?.culture ?? null);
 
-      // predicted ring counts: what already stands, minus what was hand-placed
-      const ringCounts: Partial<Record<BuildingId, number>> = {};
-      const placedCounts: Partial<Record<BuildingId, number>> = {};
-      for (const pb of s.placed) placedCounts[pb.building] = (placedCounts[pb.building] ?? 0) + 1;
-      for (const [id, n] of Object.entries(s.buildings)) {
-        ringCounts[id] = Math.max(0, (n ?? 0) - (placedCounts[id] ?? 0));
-      }
-
+      // at-less jobs land on the next ring spots after everything standing —
+      // exactly the k the sim's construction system will assign (M12)
+      let atless = 0;
       s.buildQueue.forEach((job, qi) => {
         const arch = BUILDING_ARCH[job.building];
         if (!arch) return;
@@ -124,8 +119,7 @@ export function createScaffolds(scene: THREE.Scene, world: WorldData): Scaffolds
           y = terrainHeight(world.heightmap, x, z);
           rot = (x + z) % Math.PI;
         } else {
-          const p = ringPlacement(world, s.id, ringIndexFor(ringCounts, job.building));
-          ringCounts[job.building] = (ringCounts[job.building] ?? 0) + 1;
+          const p = ringSpot(world, s.id, s.placed.length + atless++);
           x = p.x;
           z = p.z;
           y = p.y;
