@@ -29,7 +29,12 @@ const WILD_PHASE_COLOR: Record<string, number> = {
 };
 const DRAGON_COLOR = 0xd84418;
 
-const SOLDIER_COLOR: Record<string, number> = { player: 0xd8c88f, rival: 0x9a3a30, wild: 0x2a2622 };
+export const SOLDIER_COLOR: Record<string, number> = { player: 0xd8c88f, rival: 0x9a3a30, wild: 0x2a2622 };
+
+/** HP bars fade out beyond this camera distance — sub-pixel noise otherwise. */
+const BAR_MAX_DIST_SQ = 1600 * 1600;
+const BAR_W = 8;
+const BAR_H = 1.1;
 
 export interface ArmyPick {
   mesh: THREE.InstancedMesh;
@@ -46,6 +51,8 @@ export interface ArmiesHandle {
     fog?: { visibleAt(x: number, z: number): boolean; exploredAt(x: number, z: number): boolean },
     /** Individually selected soldiers (M8a) get small rings. */
     selectedUnits?: ReadonlySet<number>,
+    /** HP bars over wounded soldiers (M10): max-hp memory + the camera to face. */
+    bars?: { maxHp(id: number): number | undefined; camera: THREE.PerspectiveCamera },
   ): void;
   /** The banner cones, raycastable; instanceId maps through `ids`. */
   getPickTargets(): ArmyPick | null;
@@ -67,8 +74,11 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
   const _m = new THREE.Matrix4();
   const _q = new THREE.Quaternion();
   const _v = new THREE.Vector3();
+  const _v2 = new THREE.Vector3();
   const _s = new THREE.Vector3();
   const _c = new THREE.Color();
+  const _right = new THREE.Vector3();
+  const _fwd = new THREE.Vector3();
   world.camps.forEach((c, k) => {
     const y = terrainHeight(world.heightmap, c.x, c.z);
     _v.set(c.x, y, c.z);
@@ -89,9 +99,14 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
   const ringGeo = new THREE.RingGeometry(16, 20, 24);
   ringGeo.rotateX(-Math.PI / 2);
 
+  const barGeo = new THREE.PlaneGeometry(1, 1);
+  barGeo.translate(0.5, 0, 0); // left-anchored: the fill drains rightward
+
   let cones: THREE.InstancedMesh | null = null;
   let soldiers: THREE.InstancedMesh | null = null;
   let rings: THREE.InstancedMesh | null = null;
+  let barsBack: THREE.InstancedMesh | null = null;
+  let barsFront: THREE.InstancedMesh | null = null;
   let coneCap = 0;
   let soldierCap = 0;
   let ringCap = 0;
@@ -108,6 +123,8 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
     }
     if (!soldiers || needSoldiers > soldierCap) {
       if (soldiers) scene.remove(soldiers);
+      if (barsBack) scene.remove(barsBack);
+      if (barsFront) scene.remove(barsFront);
       soldierCap = Math.max(64, needSoldiers * 2);
       soldiers = new THREE.InstancedMesh(
         soldierGeo,
@@ -118,6 +135,24 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
       soldiers.frustumCulled = false;
       soldiers.raycast = () => {}; // picking goes through the banner cones only
       scene.add(soldiers);
+      barsBack = new THREE.InstancedMesh(
+        barGeo,
+        new THREE.MeshBasicMaterial({ color: 0x14100c, side: THREE.DoubleSide }),
+        soldierCap,
+      );
+      barsFront = new THREE.InstancedMesh(
+        barGeo,
+        new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide }),
+        soldierCap,
+      );
+      barsBack.name = 'hp-bars-back';
+      barsFront.name = 'hp-bars-front';
+      for (const b of [barsBack, barsFront]) {
+        b.frustumCulled = false;
+        b.raycast = () => {};
+        b.count = 0;
+        scene.add(b);
+      }
     }
     if (!rings || needRings > ringCap) {
       if (rings) scene.remove(rings);
@@ -143,7 +178,7 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
     getPickTargets(): ArmyPick | null {
       return cones ? { mesh: cones, ids: pickIds } : null;
     },
-    sync(state, alpha, selected, fog, selectedUnits) {
+    sync(state, alpha, selected, fog, selectedUnits, bars) {
       // tents show when the ground is explored and the camp still stands
       for (const camp of state.camps) {
         const c = world.camps[camp.id];
@@ -212,6 +247,13 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
       });
 
       // every soldier at its TRUE position (M8a), interpolated like the banners
+      let bIdx = 0;
+      const cam = bars?.camera;
+      if (cam) {
+        // camera-facing frame computed once — every bar shares the billboard
+        _right.set(1, 0, 0).applyQuaternion(cam.quaternion);
+        _fwd.set(0, 0, -1).applyQuaternion(cam.quaternion);
+      }
       for (const u of state.units) {
         if (!soldiers || sIdx >= soldierCap) break;
         const owner = ownerOf.get(u.group) ?? 0;
@@ -239,6 +281,32 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
           rings.setMatrixAt(rIdx, _m);
           rIdx++;
         }
+
+        // hp bar — only over the wounded, only near enough to read (M10)
+        if (bars && cam && barsBack && barsFront && bIdx < soldierCap) {
+          const max = bars.maxHp(u.id);
+          if (max !== undefined && u.hp < max && u.hp > 0) {
+            _v.set(ux, uy + 11.5 * usc, uz);
+            if (cam.position.distanceToSquared(_v) < BAR_MAX_DIST_SQ) {
+              const frac = Math.max(0, Math.min(1, u.hp / max));
+              // back plate: slightly larger, nudged away from the camera
+              _v2
+                .copy(_v)
+                .addScaledVector(_right, -(BAR_W + 0.5) / 2)
+                .addScaledVector(_fwd, -0.06);
+              _s.set(BAR_W + 0.5, BAR_H + 0.3, 1);
+              _m.compose(_v2, cam.quaternion, _s);
+              barsBack.setMatrixAt(bIdx, _m);
+              // front fill: drains rightward, red→green with health
+              _v2.copy(_v).addScaledVector(_right, -BAR_W / 2);
+              _s.set(BAR_W * frac, BAR_H, 1);
+              _m.compose(_v2, cam.quaternion, _s);
+              barsFront.setMatrixAt(bIdx, _m);
+              barsFront.setColorAt(bIdx, _c.setHSL(0.33 * frac, 0.75, 0.45));
+              bIdx++;
+            }
+          }
+        }
       }
 
       if (cones) {
@@ -254,6 +322,13 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
       if (rings) {
         rings.count = rIdx;
         rings.instanceMatrix.needsUpdate = true;
+      }
+      if (barsBack && barsFront) {
+        barsBack.count = bIdx;
+        barsFront.count = bIdx;
+        barsBack.instanceMatrix.needsUpdate = true;
+        barsFront.instanceMatrix.needsUpdate = true;
+        if (barsFront.instanceColor) barsFront.instanceColor.needsUpdate = true;
       }
     },
   };
