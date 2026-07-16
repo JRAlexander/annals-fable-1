@@ -110,7 +110,9 @@ export function createHud(el: HTMLElement, onSpeed: (s: Speed) => void, onTechTo
       );
 
       const pop = state.settlements.filter((s) => s.ownerRealm === 0).reduce((t, s) => t + s.pop, 0);
-      setText(popEl, `👥 ${Math.floor(pop)}`);
+      const owned = new Set(state.settlements.filter((s) => s.ownerRealm === 0).map((s) => s.id));
+      const idle = state.villagers.filter((v) => owned.has(v.settlement) && v.job === 'idle').length;
+      setText(popEl, `👥 ${Math.floor(pop)} · 🧺 ${idle} idle`);
       const age = state.realms[0].age;
       setText(ageEl, `${AGE_GLYPH[age]} ${AGES[age].name}`);
       const d = dateOf(state.tick);
