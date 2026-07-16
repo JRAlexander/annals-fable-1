@@ -122,16 +122,21 @@ coming. (The chronicle's annalist, as ever, knows all — read it.)
 
 ## Your first hour, step by step
 
-1. **Feed the realm.** Watch the 🌾 rate in the top bar. Your workers auto-assign
-   proportionally to what the land offers; drag the **Workers** sliders to override.
-   Setting a slider to zero means *nobody* works that job.
-2. **Build the economy — it doesn't exist until you build it.** Every settlement
-   starts as little more than a **Town Center** and a few houses; the land alone
-   offers only a handful of worker slots. **Farms, Lumber Camps, Quarries, and
-   Markets add slots**; **Houses raise the population cap** (your towns literally
-   cannot grow without them); Storehouses raise how much you can stockpile (watch
-   for "stores overflow" in the chronicle — that's waste). **Palisades**, and later
-   Stone Walls and a Keep, are what stand between a siege and your streets.
+1. **Your villagers ARE the economy.** Every scrap in your stockpile is carried
+   there by a villager: they walk to a farm or a forest, fill a basket, and haul
+   it to the nearest dropoff. Watch them stream between the fields and the Town
+   Center — **the length of that walk IS your gather rate**. The **Villagers**
+   panel (right) sets how many work each job with −/+ buttons; 🧺 in the top bar
+   counts idle hands. Train more at the Town Center (40 food + 1 pop each).
+2. **Build a Farm first — your people starve without one.** Wood and stone come
+   from the land (forest and rock cells), but food and gold need **Farms** and
+   **Markets** to work at (5 villagers each). Then play the placement game:
+   a **Lumber Camp at the treeline** or a **Quarry by the rock** receives loads
+   on the spot and can more than double that job's income vs hauling home.
+   **Houses raise the population cap**; Storehouses raise how much you can
+   stockpile (watch for "stores overflow" — that's waste). **Palisades**, and
+   later Stone Walls and a Keep, are what stand between a siege and your streets.
+   Raids kill villagers, and conquest converts them — protect the hands that feed you.
 3. **Climb the ages.** Press `T`. Research needs the matching building (farm techs
    at a Farm, and from the High Kingdom onward, a **University**). To **Advance**
    you need the listed cost plus **two different building types from your current

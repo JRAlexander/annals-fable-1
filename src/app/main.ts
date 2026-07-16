@@ -8,6 +8,8 @@ import { createFog } from '../render/fogMesh';
 import { createScaffolds } from '../render/scaffoldMesh';
 import { createScene } from '../render/scene';
 import { createUnitTracker } from '../render/unitTracker';
+import { createVillagers } from '../render/villagersMesh';
+import { createVillagerTracker } from '../render/villagerTracker';
 import type { Command, IssuedCommand } from '../sim/commands';
 import type { SimEvent } from '../sim/events';
 import { type GameState, initGameState } from '../sim/state';
@@ -247,8 +249,10 @@ async function boot(): Promise<void> {
   const constructed = createConstructed(scene.scene, world);
   const armies = createArmies(scene.scene, world);
   const tracker = createUnitTracker();
+  const villagerTracker = createVillagerTracker();
   const effects = createEffects(scene.scene, world);
   const scaffolds = createScaffolds(scene.scene, world);
+  const villagersMesh = createVillagers(scene.scene, world);
   const input = createInput({
     scene,
     world,
@@ -269,7 +273,9 @@ async function boot(): Promise<void> {
       toasts.push(events, state);
       refreshFog();
       // per tick, not per frame — at 12× thirty ticks can pass per rAF
-      effects.spawnFromDiff(tracker.diff(state), state, fogQueries, loop.getSpeed());
+      const combatDiff = tracker.diff(state);
+      combatDiff.deaths.push(...villagerTracker.diff(state)); // the fields bury their own
+      effects.spawnFromDiff(combatDiff, state, fogQueries, loop.getSpeed());
       for (const e of events) {
         if (e.kind === 'dayEnd') recorder.autosave(state.tick, packExplored(fogMask));
         if (!ended && (e.kind === 'gameWon' || e.kind === 'gameLost')) {
@@ -296,6 +302,7 @@ async function boot(): Promise<void> {
           if (!liveIds.has(id)) input.unitSelection.delete(id);
         }
       }
+      villagersMesh.sync(state, alpha, fogQueries);
       armies.sync(state, alpha, input.selection, fogQueries, input.unitSelection, {
         maxHp: tracker.maxHp,
         camera: scene.camera,
