@@ -3,8 +3,11 @@ import type { CultureId, Modifier } from '../content/schema';
 import { makeStreams } from '../core/rng';
 import { createArmies } from '../render/armiesMesh';
 import { createConstructed } from '../render/constructedMesh';
+import { createEffects } from '../render/effects';
 import { createFog } from '../render/fogMesh';
+import { createScaffolds } from '../render/scaffoldMesh';
 import { createScene } from '../render/scene';
+import { createUnitTracker } from '../render/unitTracker';
 import type { Command, IssuedCommand } from '../sim/commands';
 import type { SimEvent } from '../sim/events';
 import { type GameState, initGameState } from '../sim/state';
@@ -226,6 +229,9 @@ async function boot(): Promise<void> {
   const techMenu = createTechMenu(techMenuEl, enqueue, culture);
   const constructed = createConstructed(scene.scene, world);
   const armies = createArmies(scene.scene, world);
+  const tracker = createUnitTracker();
+  const effects = createEffects(scene.scene, world);
+  const scaffolds = createScaffolds(scene.scene, world);
   const input = createInput({
     scene,
     world,
@@ -245,6 +251,8 @@ async function boot(): Promise<void> {
       chronicle.push(events);
       toasts.push(events, state);
       refreshFog();
+      // per tick, not per frame — at 12× thirty ticks can pass per rAF
+      effects.spawnFromDiff(tracker.diff(state), state, fogQueries, loop.getSpeed());
       for (const e of events) {
         if (e.kind === 'dayEnd') recorder.autosave(state.tick, packExplored(fogMask));
         if (!ended && (e.kind === 'gameWon' || e.kind === 'gameLost')) {
@@ -254,12 +262,13 @@ async function boot(): Promise<void> {
         }
       }
     },
-    onFrame: (alpha) => {
+    onFrame: (alpha, dtMs) => {
       hud.update(state, loop.getSpeed());
       buildMenu.update(state);
       armyPanel.update(state);
       techMenu.update(state);
       constructed.sync(state, fogQueries);
+      scaffolds.sync(state, fogQueries);
       // prune the dead out of both selections so rings and orders stay honest
       for (const id of input.selection) {
         if (!state.armies.some((a) => a.id === id && a.ownerRealm === 0)) input.selection.delete(id);
@@ -270,10 +279,14 @@ async function boot(): Promise<void> {
           if (!liveIds.has(id)) input.unitSelection.delete(id);
         }
       }
-      armies.sync(state, alpha, input.selection, fogQueries, input.unitSelection);
+      armies.sync(state, alpha, input.selection, fogQueries, input.unitSelection, {
+        maxHp: tracker.maxHp,
+        camera: scene.camera,
+      });
       if (input.selection.size || input.unitSelection.size)
         selChipEl.textContent = describeSelection(state, input.selection, input.unitSelection);
       else if (selChipEl.style.display !== 'none') selChipEl.style.display = 'none';
+      effects.update(dtMs, loop.getSpeed());
       scene.render();
     },
   });
@@ -284,7 +297,13 @@ async function boot(): Promise<void> {
   );
 
   // debug/verification hook — the sim is still command-driven; this is a window for tests
-  (window as unknown as Record<string, unknown>).__realms = { state, enqueue, scene, fog: fogQueries };
+  (window as unknown as Record<string, unknown>).__realms = {
+    state,
+    enqueue,
+    scene,
+    fog: fogQueries,
+    effects,
+  };
 
   window.addEventListener('keydown', (e) => {
     if (e.code === 'Space') {

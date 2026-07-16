@@ -23,7 +23,7 @@ export const DECOR_ARCHS = [
 ] as const;
 export type DecorArch = (typeof DECOR_ARCHS)[number];
 
-function paint(g: THREE.BufferGeometry, col: number): THREE.BufferGeometry {
+export function paint(g: THREE.BufferGeometry, col: number): THREE.BufferGeometry {
   const c = new THREE.Color(col);
   const n = g.attributes.position.count;
   const a = new Float32Array(n * 3);
