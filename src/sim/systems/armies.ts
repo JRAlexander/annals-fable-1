@@ -1,6 +1,13 @@
 import { ENGAGE_RANGE } from '../../content/rts';
 import type { ResourceId, UnitId } from '../../content/schema';
-import { DRAGON_HOARD, RAID_PLUNDER, RAID_POP_MULT, WILD_REALM } from '../../content/threats';
+import {
+  CAPTURE_VILLAGER_LOSS,
+  DRAGON_HOARD,
+  RAID_PLUNDER,
+  RAID_POP_MULT,
+  RAID_VILLAGER_LOSS,
+  WILD_REALM,
+} from '../../content/threats';
 import { UNITS } from '../../content/units';
 import { cellPos, hidx, worldToCell } from '../../worldgen/coords';
 import { settlementFortHp } from '../buildings';
@@ -13,6 +20,7 @@ import { dateOf } from '../time';
 import { musterDefenders, reconcileUnits, steerUnits } from '../unitStore';
 import { dragonTarget } from './threats';
 import { type FortState, fightUnits } from './unitCombat';
+import { killVillagers } from './villagers';
 
 /** Base march rate in path-cells per tick, scaled by unit speed and terrain. */
 const MARCH_RATE = 0.35;
@@ -161,6 +169,7 @@ function settlementFalls(state: GameState, army: Army, target: SimSettlement, ou
       plunder += taken;
     }
     target.pop = Math.floor(target.pop * RAID_POP_MULT);
+    killVillagers(state, target.id, RAID_VILLAGER_LOSS); // the fields are not spared
     out.push({ kind: 'settlementRaided', settlement: target.id, plunder });
     if ((army.units.dragon ?? 0) > 0) {
       const next = dragonTarget(state, target.id);
@@ -177,6 +186,8 @@ function settlementFalls(state: GameState, army: Army, target: SimSettlement, ou
   const from = target.ownerRealm;
   target.ownerRealm = army.ownerRealm;
   target.pop = Math.floor(target.pop * 0.9);
+  // most villagers survive a change of banner — their loads now feed the captor
+  killVillagers(state, target.id, CAPTURE_VILLAGER_LOSS);
   target.garrison = {};
   target.trainQueue = [];
   out.push({ kind: 'settlementCaptured', settlement: target.id, by: army.ownerRealm, from });

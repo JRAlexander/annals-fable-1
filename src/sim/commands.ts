@@ -1,6 +1,6 @@
 import { AGES, ageIndex, nextAge } from '../content/ages';
 import { BUILDINGS } from '../content/buildings';
-import { WORK_JOBS, type WorkJob } from '../content/economy';
+import { VILLAGER_COST, VILLAGER_JOBS, type VillagerJob } from '../content/economy';
 import type { BuildingId, Cost, ResourceId, TechId, UnitId } from '../content/schema';
 import { TECHS } from '../content/techs';
 import { WILD_REALM } from '../content/threats';
@@ -33,12 +33,13 @@ export type Objective =
 /**
  * Every player AND AI mutation flows through this union — it is the sim's
  * entire external API, which is what makes save-as-command-log, replays, and
- * the ruler-mode → RTS evolution work. Only `setWorkerAllocation` is live in
- * M1; the rest are typed now and reject cleanly until their milestone.
+ * the ruler-mode → RTS evolution work. (M12 retired `setWorkerAllocation`
+ * for the villager pair below — save format bumped to v3.)
  */
 export type Command =
   // Ruler mode
-  | { kind: 'setWorkerAllocation'; settlement: number; alloc: Partial<Record<WorkJob, number>> }
+  | { kind: 'trainVillagers'; settlement: number; count: number }
+  | { kind: 'assignVillagers'; settlement: number; job: VillagerJob; count: number }
   | { kind: 'queueBuilding'; settlement: number; building: BuildingId }
   | { kind: 'setResearch'; tech: TechId }
   | { kind: 'advanceAge' }
@@ -139,7 +140,7 @@ export function applyCommands(state: GameState, issued: IssuedCommand[], out: Si
   for (const ic of ordered) {
     const { cmd, realm } = ic;
     switch (cmd.kind) {
-      case 'setWorkerAllocation': {
+      case 'trainVillagers': {
         const s = state.settlements[cmd.settlement];
         if (!s) {
           reject(out, realm, `no such settlement ${cmd.settlement}`);
@@ -149,17 +150,47 @@ export function applyCommands(state: GameState, issued: IssuedCommand[], out: Si
           reject(out, realm, `settlement ${cmd.settlement} not owned by realm ${realm}`);
           break;
         }
-        const next = { ...s.alloc, ...cmd.alloc };
-        const values = WORK_JOBS.map((j) => next[j]);
-        if (values.some((v) => !Number.isFinite(v) || v < 0)) {
-          reject(out, realm, 'allocation weights must be finite and >= 0');
+        if (!Number.isInteger(cmd.count) || cmd.count <= 0 || cmd.count > 20) {
+          reject(out, realm, 'villager count must be an integer between 1 and 20');
           break;
         }
-        if (values.every((v) => v === 0)) {
-          reject(out, realm, 'at least one allocation weight must be > 0');
+        if (s.pop - cmd.count < 30) {
+          reject(out, realm, `not enough folk in ${state.world.settlements[s.id].name} to send afield`);
           break;
         }
-        s.alloc = next;
+        const total: Cost = {};
+        for (const [res, amt] of Object.entries(VILLAGER_COST) as [ResourceId, number][]) {
+          total[res] = amt * cmd.count;
+        }
+        const short = shortOf(state.realms[realm], total);
+        if (short) {
+          reject(out, realm, `cannot afford villagers: needs ${short[1]} ${short[0]}`);
+          break;
+        }
+        pay(state.realms[realm], total);
+        s.pop -= cmd.count;
+        s.villagerQueue.remaining += cmd.count;
+        break;
+      }
+      case 'assignVillagers': {
+        const s = state.settlements[cmd.settlement];
+        if (!s) {
+          reject(out, realm, `no such settlement ${cmd.settlement}`);
+          break;
+        }
+        if (s.ownerRealm !== realm) {
+          reject(out, realm, `settlement ${cmd.settlement} not owned by realm ${realm}`);
+          break;
+        }
+        if (!VILLAGER_JOBS.includes(cmd.job)) {
+          reject(out, realm, `unknown job '${cmd.job}'`);
+          break;
+        }
+        if (!Number.isInteger(cmd.count) || cmd.count < 0 || cmd.count > 500) {
+          reject(out, realm, 'job target must be an integer between 0 and 500');
+          break;
+        }
+        s.jobTargets[cmd.job] = cmd.count;
         break;
       }
       case 'queueBuilding': {

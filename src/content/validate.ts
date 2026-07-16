@@ -44,9 +44,20 @@ export function validateContent(): string[] {
     }
     for (const fn of def.functions) {
       if (fn.kind === 'fort' && fn.hp <= 0) errors.push(`building ${key}: fort hp must be positive`);
+      if (fn.kind === 'workplace' && fn.slots <= 0)
+        errors.push(`building ${key}: workplace slots must be positive`);
+      if (fn.kind === 'dropoff' && fn.resources.length === 0)
+        errors.push(`building ${key}: dropoff must accept at least one resource`);
     }
     if (def.seedOnly && Object.keys(def.cost).length > 0)
       errors.push(`building ${key}: seedOnly buildings must be free (never paid for)`);
+  }
+  // the town center must take every resource — villagers always have a home dropoff
+  {
+    const tc = BUILDINGS.townCenter;
+    const drop = tc?.functions.find((f) => f.kind === 'dropoff');
+    if (!drop || drop.kind !== 'dropoff' || drop.resources.length < 4)
+      errors.push('townCenter: must be a universal dropoff');
   }
 
   // settlement seeds: real buildings, exactly one town center per tier

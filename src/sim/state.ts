@@ -1,24 +1,18 @@
 import { CULTURE_IDS } from '../content/cultures';
 import {
   HOUSING_BASE,
-  MIN_SITE_SLOTS,
   SEED_BUILDINGS,
-  SLOTS_PER_CELL,
   STARTING_POP,
   STARTING_STOCK,
-  TRADE_BASE,
-  TRADE_HARBOR_BONUS,
-  TRADE_PER_ROAD,
-  WORK_JOBS,
-  WORK_RATIO,
-  type WorkJob,
+  STARTING_VILLAGERS,
+  VILLAGER_JOBS,
+  type VillagerJob,
 } from '../content/economy';
 import type { AgeId, BuildingId, CultureId, ResourceId, TechId, UnitId } from '../content/schema';
-import { clamp } from '../core/math';
-import { hidx, terrainHeight } from '../worldgen/coords';
+import { terrainHeight } from '../worldgen/coords';
 import type { WorldData } from '../worldgen/types';
 // (BanditCamp defenders reference unit ids as data — no UNITS import needed here)
-import { Biome, GRID, MAX_HEIGHT, SEA_LEVEL, WORLD_SIZE } from '../worldgen/types';
+import { MAX_HEIGHT, SEA_LEVEL } from '../worldgen/types';
 import { buildingContrib } from './buildings';
 
 export type RealmId = number;
@@ -54,12 +48,10 @@ export interface SimSettlement {
   pop: number;
   /** Derived cache (housing), recomputed daily via resolveStat. */
   popCap: number;
-  /** Fraction of pop that works. M2 may expose this to the player. */
-  workRatio: number;
-  /** Allocation weights, normalized at use. The build menu's sliders write these via command. */
-  alloc: Record<WorkJob, number>;
-  /** Max workers per job from surrounding terrain; buildings add on top (sim/buildings.ts). */
-  siteCapacity: Record<WorkJob, number>;
+  /** Desired villager count per job (absolute); the villagers system reconciles. */
+  jobTargets: Record<VillagerJob, number>;
+  /** Villagers in training at the town center; only the head advances. */
+  villagerQueue: { remaining: number; progress: number };
   /** FIFO construction queue; only the head advances. Costs are paid at queue time. */
   buildQueue: ConstructionJob[];
   /** Completed buildings by id. */
@@ -157,6 +149,31 @@ export interface FieldUnit {
   cd: number;
 }
 
+/**
+ * A working villager (M12): the economy made flesh. Walks to a workplace or
+ * resource cell, gathers a load, and carries it home to a dropoff building —
+ * the trip distance IS the gather rate. Owner derives from the settlement.
+ */
+export interface Villager {
+  id: number;
+  /** Home settlement id — capture converts villagers with the town. */
+  settlement: number;
+  job: VillagerJob | 'idle';
+  phase: 'toWork' | 'working' | 'toDropoff';
+  x: number;
+  z: number;
+  /** Previous tick's position — the renderer interpolates. */
+  prevX: number;
+  prevZ: number;
+  /** Current leg's destination (workplace or dropoff). */
+  tx: number;
+  tz: number;
+  /** Amount of JOB_RESOURCE[job] carried. */
+  carry: number;
+  /** Dwell ticks remaining while working. */
+  timer: number;
+}
+
 /** Live bandit camp state (site geography lives in WorldData.camps). */
 export interface BanditCamp {
   id: number;
@@ -179,6 +196,9 @@ export interface GameState {
   /** The physical unit layer (M8a) — one entity per fielded soldier. */
   units: FieldUnit[];
   nextUnitId: number;
+  /** The working population (M12) — one entity per villager. */
+  villagers: Villager[];
+  nextVillagerId: number;
   camps: BanditCamp[]; // index === WorldData.camps id
   /** Latched by the victory system; the sim keeps ticking after — the world lives on. */
   outcome: GameOutcome | null;
@@ -190,47 +210,14 @@ export interface GameState {
   world: WorldData;
 }
 
-/** Worker slots a settlement's surroundings provide, from a biome scan. */
-function scanSiteCapacity(world: WorldData, siteIdx: number): Record<WorkJob, number> {
-  const s = world.settlements[siteIdx];
-  const cellW = WORLD_SIZE / (GRID - 1);
-  const r = Math.min(4, Math.ceil(s.radius / cellW) + 1);
-  const cap: Record<WorkJob, number> = { farm: 0, forest: 0, quarry: 0, trade: 0 };
-  for (let dj = -r; dj <= r; dj++) {
-    for (let di = -r; di <= r; di++) {
-      const i = clamp(s.i + di, 0, GRID - 1);
-      const j = clamp(s.j + dj, 0, GRID - 1);
-      switch (world.biome[hidx(i, j)]) {
-        case Biome.Farmland:
-          cap.farm += SLOTS_PER_CELL.farmland;
-          break;
-        case Biome.Meadow:
-          cap.farm += SLOTS_PER_CELL.meadow;
-          break;
-        case Biome.Deciduous:
-          cap.forest += SLOTS_PER_CELL.deciduous;
-          break;
-        case Biome.Pine:
-          cap.forest += SLOTS_PER_CELL.pine;
-          break;
-        case Biome.Rock:
-          cap.quarry += SLOTS_PER_CELL.rock;
-          break;
-        default:
-          break;
-      }
-    }
-  }
-  // the land offers a living, not a livelihood — buildings carry the economy (M9)
-  cap.farm = Math.max(cap.farm, MIN_SITE_SLOTS.farm);
-  cap.forest = Math.max(cap.forest, MIN_SITE_SLOTS.forest);
-  cap.quarry = Math.max(cap.quarry, MIN_SITE_SLOTS.quarry);
-  const roads = world.roads.filter((rd) => rd.a === s.id || rd.b === s.id).length;
-  cap.trade = TRADE_BASE[s.tier] + (s.isHarbor ? TRADE_HARBOR_BONUS : 0) + roads * TRADE_PER_ROAD;
-  return cap;
-}
-
 const GOLDEN_ANGLE = 2.399963;
+
+/** Starting job targets per tier — farm/gold wait latent until buildings stand. */
+const SEED_JOB_TARGETS: Record<'capital' | 'town' | 'village', Record<VillagerJob, number>> = {
+  capital: { farm: 5, wood: 4, stone: 2, gold: 1 },
+  town: { farm: 3, wood: 3, stone: 1, gold: 1 },
+  village: { farm: 2, wood: 2, stone: 1, gold: 0 },
+};
 
 /**
  * Where the seeded buildings stand: the town center at the site's heart,
@@ -335,20 +322,14 @@ export function initGameState(world: WorldData, playerCulture: CultureId = 'vale
   ];
 
   const settlements = world.settlements.map((site, idx): SimSettlement => {
-    const siteCapacity = scanSiteCapacity(world, idx);
-    // default allocation proportional to what the land offers — the M1 auto-assign
-    const total = WORK_JOBS.reduce((t, job) => t + siteCapacity[job], 0) || 1;
-    const alloc = { farm: 0, forest: 0, quarry: 0, trade: 0 };
-    for (const job of WORK_JOBS) alloc[job] = siteCapacity[job] / total;
     const buildings = { ...SEED_BUILDINGS[site.tier] };
     const s: SimSettlement = {
       id: site.id,
       ownerRealm: owners[idx] ?? 0,
       pop: STARTING_POP[site.tier],
       popCap: 0, // set below once the seeded buildings exist
-      workRatio: WORK_RATIO,
-      alloc,
-      siteCapacity,
+      jobTargets: { ...SEED_JOB_TARGETS[site.tier] },
+      villagerQueue: { remaining: 0, progress: 0 },
       buildQueue: [],
       buildings,
       trainQueue: [],
@@ -358,6 +339,38 @@ export function initGameState(world: WorldData, playerCulture: CultureId = 'vale
     s.popCap = HOUSING_BASE[site.tier] + buildingContrib(s).housing;
     return s;
   });
+
+  // the founding households: villagers ring the town center, idle until the
+  // first tick's reconciler puts them to work — pure geometry, no rng
+  const villagers: Villager[] = [];
+  let nextVillagerId = 0;
+  for (const site of world.settlements) {
+    const n = STARTING_VILLAGERS[site.tier];
+    for (let k = 0; k < n; k++) {
+      const angle = site.id * 1.3 + k * GOLDEN_ANGLE;
+      let x = site.x;
+      let z = site.z;
+      for (let attempt = 0; attempt < 8; attempt++) {
+        x = site.x + Math.cos(angle) * (site.radius * 0.3 + attempt * 20);
+        z = site.z + Math.sin(angle) * (site.radius * 0.3 + attempt * 20);
+        if (terrainHeight(world.heightmap, x, z) > SEA_LEVEL * MAX_HEIGHT + 2) break;
+      }
+      villagers.push({
+        id: nextVillagerId++,
+        settlement: site.id,
+        job: 'idle',
+        phase: 'toWork',
+        x,
+        z,
+        prevX: x,
+        prevZ: z,
+        tx: x,
+        tz: z,
+        carry: 0,
+        timer: 0,
+      });
+    }
+  }
 
   // camps: defenders scale with distance from the capital (rng-free, from geography)
   const cap = world.capital;
@@ -386,6 +399,8 @@ export function initGameState(world: WorldData, playerCulture: CultureId = 'vale
     nextArmyId: 0,
     units: [],
     nextUnitId: 0,
+    villagers,
+    nextVillagerId,
     camps,
     outcome: null,
     dragonWoken: false,

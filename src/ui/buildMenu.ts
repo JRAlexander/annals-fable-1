@@ -1,17 +1,17 @@
 import { AGES, ageIndex } from '../content/ages';
 import { BUILDING_IDS, BUILDINGS } from '../content/buildings';
-import { JOB_RESOURCE, WORK_JOBS, type WorkJob } from '../content/economy';
+import { JOB_RESOURCE, VILLAGER_COST, VILLAGER_JOBS, type VillagerJob } from '../content/economy';
 import type { BuildingId, ResourceId } from '../content/schema';
 import { TECHS } from '../content/techs';
-import { jobCapacity } from '../sim/buildings';
+import { workplaceSlots } from '../sim/buildings';
 import type { Command } from '../sim/commands';
 import type { GameState } from '../sim/state';
 
-const JOB_LABEL: Record<WorkJob, string> = {
-  farm: '🌾 Farm',
-  forest: '🪵 Forest',
-  quarry: '⛰ Quarry',
-  trade: '🪙 Trade',
+const JOB_LABEL: Record<VillagerJob, string> = {
+  farm: '🌾 Farms',
+  wood: '🪵 Forest',
+  stone: '⛰ Stone',
+  gold: '🪙 Stalls',
 };
 
 function costText(cost: Partial<Record<ResourceId, number>>): string {
@@ -44,19 +44,18 @@ export function createBuildMenu(
     <div id="bm-buildings"></div>
     <div class="bm-section">Building queue</div>
     <div id="bm-queue" class="bm-queue"><i>empty</i></div>
-    <div class="bm-section">Workers</div>
-    <div id="bm-alloc"></div>
+    <div class="bm-section">Villagers</div>
+    <div id="bm-villagers"></div>
   `;
   const select = el.querySelector('#bm-settlement') as HTMLSelectElement;
   const popEl = el.querySelector('#bm-pop') as HTMLElement;
   const buildingsEl = el.querySelector('#bm-buildings') as HTMLElement;
   const queueEl = el.querySelector('#bm-queue') as HTMLElement;
-  const allocEl = el.querySelector('#bm-alloc') as HTMLElement;
+  const villagersEl = el.querySelector('#bm-villagers') as HTMLElement;
 
   let selected = -1;
   select.addEventListener('change', () => {
     selected = Number(select.value);
-    syncSliders = true;
   });
 
   // build buttons
@@ -76,26 +75,47 @@ export function createBuildMenu(
     buttons.set(id, { btn: b, sub: b.querySelector('span') as HTMLElement });
   }
 
-  // allocation sliders
-  const sliders = new Map<WorkJob, { input: HTMLInputElement; cap: HTMLElement }>();
-  let syncSliders = true; // pull values from state on next update (after settlement switch)
-  let dragging = false;
-  for (const job of WORK_JOBS) {
+  // villager job rows (M12): counts + −/+ buttons, the sliders are history
+  const trainBtn = document.createElement('button');
+  trainBtn.className = 'bm-build';
+  trainBtn.innerHTML = `<b>👤 Train villager</b><span>${costText(VILLAGER_COST)}</span>`;
+  villagersEl.appendChild(trainBtn);
+  const idleEl = document.createElement('div');
+  idleEl.className = 'bm-qrow';
+  villagersEl.appendChild(idleEl);
+  const jobRows = new Map<
+    VillagerJob,
+    { minus: HTMLButtonElement; plus: HTMLButtonElement; label: HTMLElement }
+  >();
+  for (const job of VILLAGER_JOBS) {
     const row = document.createElement('div');
     row.className = 'bm-slider';
-    row.innerHTML = `<label>${JOB_LABEL[job]}</label><input type="range" min="0" max="100" step="1"><span class="cap"></span>`;
-    const input = row.querySelector('input') as HTMLInputElement;
-    input.addEventListener('pointerdown', () => {
-      dragging = true;
+    row.innerHTML = `<label>${JOB_LABEL[job]}</label><button class="bm-step">−</button><span class="cap"></span><button class="bm-step">+</button>`;
+    const [minus, plus] = row.querySelectorAll('button');
+    villagersEl.appendChild(row);
+    jobRows.set(job, {
+      minus: minus as HTMLButtonElement,
+      plus: plus as HTMLButtonElement,
+      label: row.querySelector('.cap') as HTMLElement,
     });
-    input.addEventListener('change', () => {
-      dragging = false;
-      const alloc: Partial<Record<WorkJob, number>> = {};
-      for (const [j, s] of sliders) alloc[j] = Number(s.input.value);
-      enqueue({ kind: 'setWorkerAllocation', settlement: selected, alloc });
+  }
+  const bump = (job: VillagerJob, d: number, state: GameState) => {
+    const s = state.settlements.find((x) => x.id === selected && x.ownerRealm === 0);
+    if (!s) return;
+    enqueue({
+      kind: 'assignVillagers',
+      settlement: selected,
+      job,
+      count: Math.max(0, s.jobTargets[job] + d),
     });
-    allocEl.appendChild(row);
-    sliders.set(job, { input, cap: row.querySelector('.cap') as HTMLElement });
+  };
+  let lastState: GameState | null = null;
+  trainBtn.addEventListener('click', () => {
+    enqueue({ kind: 'trainVillagers', settlement: selected, count: 1 });
+  });
+  for (const [job, ui] of jobRows) {
+    ui.minus.addEventListener('click', () => lastState && bump(job, -1, lastState));
+    ui.plus.addEventListener('click', () => lastState && bump(job, +1, lastState));
   }
 
   let lastOwnSig = '';
@@ -118,7 +138,6 @@ export function createBuildMenu(
         }
         if (!mine.some((x) => x.id === selected)) {
           selected = mine[0]?.id ?? -1;
-          syncSliders = true;
         }
         select.value = String(selected);
       }
@@ -160,15 +179,21 @@ export function createBuildMenu(
         });
       }
 
-      const total = WORK_JOBS.reduce((t, j) => t + s.alloc[j], 0) || 1;
-      for (const [job, ui] of sliders) {
-        if (syncSliders && !dragging) ui.input.value = String(Math.round((s.alloc[job] / total) * 100));
-        const workers = Math.floor(s.pop * s.workRatio);
-        const want = Math.floor((workers * s.alloc[job]) / total);
-        const cap = jobCapacity(s, job);
-        ui.cap.textContent = `${Math.min(want, cap)}/${cap} → ${JOB_RESOURCE[job]}`;
+      lastState = state;
+      const villagers = state.villagers.filter((v) => v.settlement === s.id);
+      const idle = villagers.filter((v) => v.job === 'idle').length;
+      const training = s.villagerQueue.remaining;
+      idleEl.textContent = `${villagers.length} villagers · ${idle} idle${training ? ` · ${training} training` : ''}`;
+      trainBtn.disabled =
+        s.pop - 1 < 30 ||
+        !Object.entries(VILLAGER_COST).every(([r, n]) => realm.stock[r as ResourceId] >= (n as number));
+      for (const [job, ui] of jobRows) {
+        const assigned = villagers.filter((v) => v.job === job).length;
+        const cap = job === 'wood' || job === 'stone' ? null : workplaceSlots(s, JOB_RESOURCE[job]);
+        ui.label.textContent = `${assigned}/${s.jobTargets[job]}${cap !== null ? ` (cap ${cap})` : ''}`;
+        ui.plus.disabled = cap !== null && s.jobTargets[job] >= cap;
+        ui.minus.disabled = s.jobTargets[job] <= 0;
       }
-      syncSliders = false;
     },
   };
 }

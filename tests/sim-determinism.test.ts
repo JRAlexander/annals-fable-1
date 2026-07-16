@@ -9,7 +9,7 @@ const SCRIPT: Record<number, IssuedCommand[]> = {
       tick: 300,
       realm: 0,
       seq: 0,
-      cmd: { kind: 'setWorkerAllocation', settlement: 0, alloc: { farm: 2, forest: 1, quarry: 1, trade: 1 } },
+      cmd: { kind: 'trainVillagers', settlement: 0, count: 4 },
     },
   ],
   900: [
@@ -17,7 +17,7 @@ const SCRIPT: Record<number, IssuedCommand[]> = {
       tick: 900,
       realm: 0,
       seq: 1,
-      cmd: { kind: 'setWorkerAllocation', settlement: 1, alloc: { forest: 3, farm: 1 } },
+      cmd: { kind: 'assignVillagers', settlement: 0, job: 'wood', count: 8 },
     },
   ],
 };
@@ -25,7 +25,7 @@ const SCRIPT: Record<number, IssuedCommand[]> = {
 // Golden hash for seed 1234 @ 2000 ticks with SCRIPT. If a sim change is
 // INTENTIONAL, update this value; if you didn't mean to change sim behavior,
 // this failing means you did.
-const GOLDEN_HASH_1234 = '73d5c38c';
+const GOLDEN_HASH_1234 = '9b2d5f42';
 
 describe('sim determinism', () => {
   it('same seed + same command log → identical state hash after 2000 ticks', () => {
@@ -76,7 +76,7 @@ describe('sim determinism', () => {
           tick: 100,
           realm: 0,
           seq: 0,
-          cmd: { kind: 'setWorkerAllocation', settlement: 0, alloc: { forest: 5 } },
+          cmd: { kind: 'assignVillagers', settlement: 0, job: 'wood', count: 5 },
         },
       ],
     });

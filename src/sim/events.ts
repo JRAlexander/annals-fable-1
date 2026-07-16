@@ -18,6 +18,7 @@ export type SimEvent =
   | { kind: 'ageAdvanceStarted'; realm: RealmId; age: AgeId }
   | { kind: 'ageAdvanced'; realm: RealmId; age: AgeId }
   | { kind: 'unitsTrained'; settlement: number; unit: UnitId; count: number }
+  | { kind: 'villagersTrained'; settlement: number; count: number }
   | { kind: 'armyFormed'; army: number; settlement: number; strength: number }
   | { kind: 'armyDeparted'; army: number; camp: number }
   | { kind: 'battleStarted'; army: number; camp: number }

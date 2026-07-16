@@ -7,12 +7,12 @@ import { aiSystem } from './systems/ai';
 import { armiesSystem } from './systems/armies';
 import { constructionSystem } from './systems/construction';
 import { populationSystem } from './systems/population';
-import { productionSystem } from './systems/production';
 import { researchSystem } from './systems/research';
 import { storageSystem } from './systems/storage';
 import { threatsSystem } from './systems/threats';
 import { trainingSystem } from './systems/training';
 import { victorySystem } from './systems/victory';
+import { villagersSystem } from './systems/villagers';
 import { dateOf, isDayEnd } from './time';
 
 /** The world stream is spent during generateWorld; the sim uses the rest. */
@@ -35,7 +35,7 @@ export function advanceTick(state: GameState, issued: IssuedCommand[], streams: 
   researchSystem(state, events);
   trainingSystem(state, events);
   armiesSystem(state, events);
-  productionSystem(state, events);
+  villagersSystem(state, events); // the economy walks (M12)
   if (isDayEnd(state.tick)) {
     populationSystem(state, events);
     const d = dateOf(state.tick);

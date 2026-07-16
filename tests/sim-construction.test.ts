@@ -28,28 +28,22 @@ describe('construction', () => {
     expect(sim.state.settlements[0].buildQueue).toHaveLength(0);
   });
 
-  it('farms raise food income when the land is the constraint', () => {
-    // all-farm allocation makes farm capacity the binding constraint, so the
-    // built farm's extra slots translate directly into more assigned workers
-    const allFarm: IssuedCommand = {
+  it('farms raise food income — villagers can only work fields that exist', () => {
+    // same farmer target both worlds; only one world builds the farm
+    const wantFarmers: IssuedCommand = {
       tick: 0,
       realm: 0,
       seq: 9,
-      cmd: { kind: 'setWorkerAllocation', settlement: 0, alloc: { farm: 1, forest: 0, quarry: 0, trade: 0 } },
+      cmd: { kind: 'assignVillagers', settlement: 0, job: 'farm', count: 6 },
     };
     const base = freshSim(1234);
-    run(base, 150, { 0: [allFarm] });
+    run(base, 400, { 0: [wantFarmers] });
 
     const built = freshSim(1234);
-    run(built, 150, { 0: [allFarm, queue('farm', 0, 0), queue('farm', 0, 1)] });
+    run(built, 400, { 0: [wantFarmers, queue('farm', 0, 0), queue('farm', 0, 1)] });
 
-    // both farms are long complete by tick 150; compare one tick of pure production
-    const tickIncome = (sim: ReturnType<typeof freshSim>) => {
-      const before = sim.state.realms[0].stock.food;
-      run(sim, 1);
-      return sim.state.realms[0].stock.food - before;
-    };
-    expect(tickIncome(built)).toBeGreaterThan(tickIncome(base));
+    // with no farm standing the farmers idle: the built world out-eats the bare one
+    expect(built.state.realms[0].stock.food).toBeGreaterThan(base.state.realms[0].stock.food);
   });
 
   it('houses raise the housing cap', () => {

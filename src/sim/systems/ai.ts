@@ -1,4 +1,5 @@
 import { AGES, nextAge } from '../../content/ages';
+import { FOOD_PER_POP_DAY, STARTING_VILLAGERS, VILLAGER_JOBS, type VillagerJob } from '../../content/economy';
 import type { BuildingId, TechId } from '../../content/schema';
 import { TECHS } from '../../content/techs';
 import { UNITS } from '../../content/units';
@@ -29,13 +30,36 @@ export function aiSystem(state: GameState): IssuedCommand[] {
     const aggression = 0.6 + (0.4 * ((realm.id * 7919) % 10)) / 10;
     const day = dateOf(state.tick).day;
 
+    // --- villagers: train toward a growing target, keep them assigned (M12) ---
+    const realmPop = mine.reduce((t, s) => t + s.pop, 0);
+    const foodBuffer = realmPop * FOOD_PER_POP_DAY * 30; // a season in the granary
+    for (const s of mine) {
+      const site = state.world.settlements[s.id];
+      const have = state.villagers.filter((v) => v.settlement === s.id).length + s.villagerQueue.remaining;
+      const target = Math.min(30, STARTING_VILLAGERS[site.tier] + Math.floor(day / 90));
+      if (have < target && realm.stock.food > 150 && s.pop - 2 >= 30) {
+        issue({ kind: 'trainVillagers', settlement: s.id, count: Math.min(2, target - have) });
+      }
+      // food first until the larder holds a season, then wood for the builders
+      const n = state.villagers.filter((v) => v.settlement === s.id).length;
+      const hungry = realm.stock.food < foodBuffer;
+      const split: Record<VillagerJob, number> = hungry
+        ? { farm: 0.5, wood: 0.3, stone: 0.1, gold: 0.1 }
+        : { farm: 0.3, wood: 0.4, stone: 0.2, gold: 0.1 };
+      for (const job of VILLAGER_JOBS) {
+        const want = Math.floor(n * split[job]);
+        if (s.jobTargets[job] !== want)
+          issue({ kind: 'assignVillagers', settlement: s.id, job, count: want });
+      }
+    }
+
     // --- economy: one building at a time, in priority order ---
-    // houses lead: since M9 the popCap starts near the starting pop, and a
-    // realm that stops housing stops growing (and stops fielding armies)
+    // farms lead: villagers can only work fields that exist (M12); houses next
+    // because a realm that stops housing stops growing
     if (!queued) {
       const wants: [BuildingId, number][] = [
+        ['farm', Math.max(1, Math.ceil(seat.jobTargets.farm / 5))],
         ['house', 2 + Math.floor(day / 90)],
-        ['farm', 1 + Math.floor(day / 180)],
         ['lumberCamp', 1],
         ['barracks', 1],
         ['storehouse', 1 + Math.floor(day / 300)],

@@ -88,7 +88,10 @@ export interface TechDef {
 
 export type BuildingFunction =
   | { kind: 'housing'; capacity: number }
-  | { kind: 'production'; resource: ResourceId; workers: number; ratePerWorker: number }
+  /** Villagers work AT this building (M12): each instance offers `slots` places. */
+  | { kind: 'workplace'; resource: ResourceId; slots: number }
+  /** Villagers deposit these resources here — trip distance IS the gather rate. */
+  | { kind: 'dropoff'; resources: ResourceId[] }
   | { kind: 'training'; units: UnitId[] }
   | { kind: 'storage'; capacity: number }
   /** Fortification: each instance adds `hp` to the settlement's siege fort pool. */
