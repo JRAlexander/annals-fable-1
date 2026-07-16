@@ -1,7 +1,10 @@
 import { CULTURE_IDS } from '../content/cultures';
 import {
   HOUSING_BASE,
+  MIN_SITE_SLOTS,
+  SEED_BUILDINGS,
   SLOTS_PER_CELL,
+  STARTING_POP,
   STARTING_STOCK,
   TRADE_BASE,
   TRADE_HARBOR_BONUS,
@@ -12,10 +15,11 @@ import {
 } from '../content/economy';
 import type { AgeId, BuildingId, CultureId, ResourceId, TechId, UnitId } from '../content/schema';
 import { clamp } from '../core/math';
-import { hidx } from '../worldgen/coords';
+import { hidx, terrainHeight } from '../worldgen/coords';
 import type { WorldData } from '../worldgen/types';
 // (BanditCamp defenders reference unit ids as data — no UNITS import needed here)
-import { Biome, GRID, WORLD_SIZE } from '../worldgen/types';
+import { Biome, GRID, MAX_HEIGHT, SEA_LEVEL, WORLD_SIZE } from '../worldgen/types';
+import { buildingContrib } from './buildings';
 
 export type RealmId = number;
 
@@ -190,7 +194,7 @@ export interface GameState {
 function scanSiteCapacity(world: WorldData, siteIdx: number): Record<WorkJob, number> {
   const s = world.settlements[siteIdx];
   const cellW = WORLD_SIZE / (GRID - 1);
-  const r = Math.min(10, Math.ceil(s.radius / cellW) + 3);
+  const r = Math.min(4, Math.ceil(s.radius / cellW) + 1);
   const cap: Record<WorkJob, number> = { farm: 0, forest: 0, quarry: 0, trade: 0 };
   for (let dj = -r; dj <= r; dj++) {
     for (let di = -r; di <= r; di++) {
@@ -217,9 +221,44 @@ function scanSiteCapacity(world: WorldData, siteIdx: number): Record<WorkJob, nu
       }
     }
   }
+  // the land offers a living, not a livelihood — buildings carry the economy (M9)
+  cap.farm = Math.max(cap.farm, MIN_SITE_SLOTS.farm);
+  cap.forest = Math.max(cap.forest, MIN_SITE_SLOTS.forest);
+  cap.quarry = Math.max(cap.quarry, MIN_SITE_SLOTS.quarry);
   const roads = world.roads.filter((rd) => rd.a === s.id || rd.b === s.id).length;
   cap.trade = TRADE_BASE[s.tier] + (s.isHarbor ? TRADE_HARBOR_BONUS : 0) + roads * TRADE_PER_ROAD;
   return cap;
+}
+
+const GOLDEN_ANGLE = 2.399963;
+
+/**
+ * Where the seeded buildings stand: the town center at the site's heart,
+ * everything else on a golden-angle ring, walking outward off any water.
+ * Pure geometry — identical every init, no rng.
+ */
+function seedPlacements(
+  world: WorldData,
+  site: WorldData['settlements'][number],
+  buildings: Partial<Record<BuildingId, number>>,
+): PlacedBuilding[] {
+  const placed: PlacedBuilding[] = [{ building: 'townCenter', x: site.x, z: site.z }];
+  let k = 0;
+  for (const [id, count] of Object.entries(buildings)) {
+    if (id === 'townCenter') continue;
+    for (let n = 0; n < (count ?? 0); n++) {
+      const angle = site.id * 1.7 + k++ * GOLDEN_ANGLE;
+      let x = site.x;
+      let z = site.z;
+      for (let attempt = 0; attempt < 8; attempt++) {
+        x = site.x + Math.cos(angle) * (site.radius * 0.45 + attempt * 24);
+        z = site.z + Math.sin(angle) * (site.radius * 0.45 + attempt * 24);
+        if (terrainHeight(world.heightmap, x, z) > SEA_LEVEL * MAX_HEIGHT + 2) break;
+      }
+      placed.push({ building: id, x, z });
+    }
+  }
+  return placed;
 }
 
 /**
@@ -301,27 +340,30 @@ export function initGameState(world: WorldData, playerCulture: CultureId = 'vale
     const total = WORK_JOBS.reduce((t, job) => t + siteCapacity[job], 0) || 1;
     const alloc = { farm: 0, forest: 0, quarry: 0, trade: 0 };
     for (const job of WORK_JOBS) alloc[job] = siteCapacity[job] / total;
-    return {
+    const buildings = { ...SEED_BUILDINGS[site.tier] };
+    const s: SimSettlement = {
       id: site.id,
       ownerRealm: owners[idx] ?? 0,
-      pop: site.pop,
-      popCap: HOUSING_BASE[site.tier],
+      pop: STARTING_POP[site.tier],
+      popCap: 0, // set below once the seeded buildings exist
       workRatio: WORK_RATIO,
       alloc,
       siteCapacity,
       buildQueue: [],
-      buildings: {},
+      buildings,
       trainQueue: [],
       garrison: {},
-      placed: [],
+      placed: seedPlacements(world, site, buildings),
     };
+    s.popCap = HOUSING_BASE[site.tier] + buildingContrib(s).housing;
+    return s;
   });
 
   // camps: defenders scale with distance from the capital (rng-free, from geography)
   const cap = world.capital;
   const camps: BanditCamp[] = world.camps.map((c) => {
     const dist = Math.hypot(c.i - cap.i, c.j - cap.j);
-    const strength = Math.round(6 + dist * 0.35);
+    const strength = Math.round(4 + dist * 0.25);
     return {
       id: c.id,
       defenders: {

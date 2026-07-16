@@ -1,10 +1,9 @@
 import { placeName } from '../content/names';
 import { clamp } from '../core/math';
 import type { Rng } from '../core/rng';
-import { chance, pick, ri } from '../core/rng';
-import { cellPos, hAt, hidx, terrainHeight, worldToCell } from './coords';
-import type { DecorArch, SettlementSite, SettlementTier } from './types';
-import { Biome, CELL_SCALE, GRID, MAX_HEIGHT, SEA_LEVEL } from './types';
+import { cellPos, hAt, hidx } from './coords';
+import type { SettlementSite, SettlementTier } from './types';
+import { Biome, CELL_SCALE, GRID, SEA_LEVEL } from './types';
 
 interface SiteFields {
   heightmap: Float32Array;
@@ -72,8 +71,6 @@ export function siteSettlements(f: SiteFields, rng: Rng): SettlementSite[] {
   const settlements = chosen.map((c, idx): SettlementSite => {
     const tier = tiers[idx] ?? 'village';
     const p = cellPos(c.i, c.j);
-    const pop =
-      tier === 'capital' ? ri(rng, 2200, 2800) : tier === 'town' ? ri(rng, 400, 1200) : ri(rng, 60, 300);
     let isHarbor = false;
     if (f.coastEdge >= 0) {
       const e =
@@ -94,72 +91,10 @@ export function siteSettlements(f: SiteFields, rng: Rng): SettlementSite[] {
       x: p.x,
       z: p.z,
       tier,
-      pop,
       radius: tier === 'capital' ? 260 : tier === 'town' ? 150 : 70,
-      walls: tier === 'capital' ? 3 : tier === 'town' && chance(rng, 0.5) ? 2 : 0,
       isHarbor,
-      buildings: [],
     };
   });
   if (!settlements.some((s) => s.tier === 'capital') && settlements.length) settlements[0].tier = 'capital';
   return settlements;
-}
-
-/**
- * Decorative building scatter (ANNALS' organic district rings) so M0 renders a
- * lived-in world. Replaced by sim-constructed buildings from M2 onward.
- */
-export function scatterBuildings(f: SiteFields, s: SettlementSite, rng: Rng): void {
-  const cnt =
-    s.tier === 'capital' ? ri(rng, 160, 240) : s.tier === 'town' ? ri(rng, 60, 120) : ri(rng, 10, 26);
-  for (let n = 0; n < cnt; n++) {
-    const ang = rng() * 6.283;
-    const rr = Math.sqrt(rng()) * s.radius;
-    const bx = s.x + Math.cos(ang) * rr;
-    const bz = s.z + Math.sin(ang) * rr;
-    const th = terrainHeight(f.heightmap, bx, bz);
-    if (th < SEA_LEVEL * MAX_HEIGHT + 2) continue;
-    let arch: DecorArch;
-    let tier: number;
-    const ringT = rr / s.radius;
-    if (n === 0 && s.tier === 'capital') {
-      arch = 'keep';
-    } else if (ringT < 0.18) {
-      arch = pick(rng, ['shop', 'tavern', 'shop', 'smithy', 'warehouse'] as const);
-    } else if (ringT < 0.5) {
-      arch = pick(rng, ['house', 'shop', 'longhouse', 'smithy', 'granary'] as const);
-    } else {
-      arch = pick(rng, ['house', 'house', 'longhouse', 'mill'] as const);
-    }
-    if (n === 2 && s.tier !== 'village') arch = 'temple';
-    if (arch === 'mill') {
-      // mills want water
-      const c = worldToCell(bx, bz);
-      if (f.riverDist[hidx(c.i, c.j)] < 0.3 && !s.isHarbor) arch = 'house';
-    }
-    tier =
-      s.tier === 'capital' ? ri(rng, 2, 3) : s.tier === 'town' ? ri(rng, 1, 3) : chance(rng, 0.35) ? 2 : 1;
-    if (arch === 'keep' || arch === 'temple') tier = Math.max(tier, 2);
-    s.buildings.push({
-      arch,
-      tier,
-      x: bx,
-      y: th,
-      z: bz,
-      rot: rng() * 6.283,
-      w: 0.6 + rng() * 0.5,
-    });
-  }
-  // walls: ring of segments for walled settlements
-  if (s.walls > 0) {
-    const segs = Math.floor(s.radius / 9);
-    for (let k = 0; k < segs; k++) {
-      const a = (k / segs) * 6.283;
-      const bx = s.x + Math.cos(a) * (s.radius * 0.92);
-      const bz = s.z + Math.sin(a) * (s.radius * 0.92);
-      const th = terrainHeight(f.heightmap, bx, bz);
-      if (th < SEA_LEVEL * MAX_HEIGHT + 1) continue;
-      s.buildings.push({ arch: 'wall', tier: s.walls, x: bx, y: th, z: bz, rot: a + 1.57, w: 1 });
-    }
-  }
 }

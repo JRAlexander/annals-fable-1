@@ -170,7 +170,7 @@ describe('the unit store (M8a)', () => {
     };
     run(live, 350, { 1650: [splitCmd] });
 
-    const save: SaveGame = { v: 1, seed: 42, culture: 'valen', tick: 2000, commands: [...script, splitCmd] };
+    const save: SaveGame = { v: 2, seed: 42, culture: 'valen', tick: 2000, commands: [...script, splitCmd] };
     const restored = replay(save);
     expect(hashState(restored.state)).toBe(hashState(live.state));
   });

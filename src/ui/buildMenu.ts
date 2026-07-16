@@ -63,6 +63,7 @@ export function createBuildMenu(
   const buttons = new Map<string, { btn: HTMLButtonElement; sub: HTMLElement }>();
   for (const id of BUILDING_IDS) {
     const def = BUILDINGS[id];
+    if (def.seedOnly) continue; // town centers are founded, never built
     const b = document.createElement('button');
     b.className = 'bm-build';
     b.innerHTML = `<b>${def.name}</b><span>${costText(def.cost)}</span>`;

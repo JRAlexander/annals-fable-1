@@ -81,7 +81,9 @@ function currentAgeBuildingTypes(state: GameState, r: Realm): number {
   for (const s of state.settlements) {
     if (s.ownerRealm !== r.id) continue;
     for (const [id, n] of Object.entries(s.buildings)) {
-      if ((n ?? 0) > 0 && BUILDINGS[id]?.requiresAge === r.age) types.add(id);
+      const def = BUILDINGS[id];
+      // seeded freebies (town centers) prove nothing about a realm's progress
+      if ((n ?? 0) > 0 && def?.requiresAge === r.age && !def.seedOnly) types.add(id);
     }
   }
   return types.size;
@@ -99,6 +101,10 @@ function buildingGates(
   out: SimEvent[],
 ): boolean {
   const r = state.realms[realm];
+  if (def.seedOnly) {
+    reject(out, realm, `${def.name} cannot be built — every settlement is founded with one`);
+    return false;
+  }
   if (ageIndex(def.requiresAge) > ageIndex(r.age)) {
     reject(out, realm, `${def.name} requires ${AGES[def.requiresAge].name}`);
     return false;
@@ -207,11 +213,6 @@ export function applyCommands(state: GameState, issued: IssuedCommand[], out: Si
         }
         if (!s) {
           reject(out, realm, 'too far from any settlement of the realm');
-          break;
-        }
-        const core = state.world.settlements[s.id];
-        if (Math.hypot(core.x - x, core.z - z) < core.radius * 0.9) {
-          reject(out, realm, 'the town core is already built up');
           break;
         }
         // footprint overlap against existing placed buildings and queued spots
@@ -340,7 +341,7 @@ export function applyCommands(state: GameState, issued: IssuedCommand[], out: Si
           break;
         }
         const popNeeded = def.popCost * cmd.count;
-        if (s.pop - popNeeded < 50) {
+        if (s.pop - popNeeded < 30) {
           reject(
             out,
             realm,

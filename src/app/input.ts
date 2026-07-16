@@ -74,7 +74,6 @@ export function createInput(opts: {
       const site = world.settlements[s.id];
       const d = Math.hypot(site.x - x, site.z - z);
       if (d <= site.radius * 2.5) inInfluence = true;
-      if (d < site.radius * 0.9) return false; // the town core is built up
     }
     if (!inInfluence) return false;
     const cellW = WORLD_SIZE / (GRID - 1);

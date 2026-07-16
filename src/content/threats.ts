@@ -11,7 +11,7 @@ export const RAID_START_DAY = 45;
 export const RAID_STAGGER = 17;
 /** Raider band size = camp defender count × this (raids grow with the ages). */
 export const RAID_SIZE_MULT: Record<string, number> = {
-  founding: 0.5,
+  founding: 0.4,
   flowering: 0.75,
   highKingdom: 1.0,
   golden: 1.25,

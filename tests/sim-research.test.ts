@@ -57,7 +57,6 @@ describe('research', () => {
         { label: 'growth', q: { stat: 'popGrowth' as const }, base: 0.002 },
         { label: 'build', q: { stat: 'buildSpeed' as const }, base: 1 },
         { label: 'research', q: { stat: 'researchSpeed' as const }, base: 1 },
-        { label: 'wallHp', q: { stat: 'wallHp' as const }, base: 100 },
         ...(['infantry', 'cavalry', 'ranged', 'siege'] as const).flatMap((tag) => [
           { label: `atk:${tag}`, q: { stat: 'unitAttack' as const, unitTag: tag }, base: 8 },
           { label: `arm:${tag}`, q: { stat: 'unitArmor' as const, unitTag: tag }, base: 2 },

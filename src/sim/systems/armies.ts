@@ -3,6 +3,7 @@ import type { ResourceId, UnitId } from '../../content/schema';
 import { DRAGON_HOARD, RAID_PLUNDER, RAID_POP_MULT, WILD_REALM } from '../../content/threats';
 import { UNITS } from '../../content/units';
 import { cellPos, hidx, worldToCell } from '../../worldgen/coords';
+import { settlementFortHp } from '../buildings';
 import { totalUnits } from '../combat';
 import type { SimEvent } from '../events';
 import { resolveStat } from '../modifiers';
@@ -303,7 +304,7 @@ export function armiesSystem(state: GameState, out: SimEvent[]): void {
               const day = dateOf(state.tick).day;
               if (day - (target.lastLevyDay ?? -999) >= 30) {
                 target.lastLevyDay = day;
-                const levy = Math.max(5, Math.floor(target.pop * 0.01));
+                const levy = Math.max(5, Math.floor(target.pop * 0.05));
                 target.pop = Math.max(0, target.pop - levy);
                 target.garrison.militia = (target.garrison.militia ?? 0) + levy;
                 out.push({ kind: 'levyRaised', settlement: target.id, count: levy });
@@ -386,9 +387,9 @@ function fightField(state: GameState, army: Army, out: SimEvent[], survivors: Ar
     if (camp) fort = { side: defender.id, hp: Math.max(0, camp.fortHp) };
   } else if (defender?.defending?.settlement !== undefined) {
     const town = state.settlements[defender.defending.settlement];
-    const site = town ? state.world.settlements[town.id] : undefined;
-    if (town && site) {
-      const hp = site.walls * 200 + (town.buildings.keep ?? 0) * 1200 - (attacker.siegeDamage ?? 0);
+    if (town) {
+      // town center + palisades + walls + keep — all constructed (M9)
+      const hp = settlementFortHp(town) - (attacker.siegeDamage ?? 0);
       fort = { side: defender.id, hp: Math.max(0, hp) };
       fortSiege = true;
     }

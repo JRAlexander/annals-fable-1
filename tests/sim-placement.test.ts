@@ -105,7 +105,7 @@ describe('free building placement (M7b)', () => {
     ];
     const live = freshSim(42);
     run(live, 2000, { 50: commands });
-    const save: SaveGame = { v: 1, seed: 42, culture: 'valen', tick: 2000, commands };
+    const save: SaveGame = { v: 2, seed: 42, culture: 'valen', tick: 2000, commands };
     const restored = replay(save);
     expect(hashState(restored.state)).toBe(hashState(live.state));
     // and the building really stands at its chosen ground in both worlds

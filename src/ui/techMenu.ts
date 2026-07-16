@@ -19,8 +19,6 @@ const STAT_LABEL: Record<string, string> = {
   housingCap: 'housing',
   storageCap: 'storage',
   popGrowth: 'growth',
-  wallHp: 'wall strength',
-  unrest: 'unrest',
 };
 
 function effectText(effects: Modifier[]): string {
