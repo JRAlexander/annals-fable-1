@@ -81,6 +81,7 @@ describe('bench', () => {
         cellProgress: 0,
         objective: null,
         phase: 'fighting',
+        stance: 'standGround',
         battleStartStrength: totalUnits(counts),
         engagedWith: -1,
       };

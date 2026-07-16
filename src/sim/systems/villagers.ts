@@ -9,10 +9,12 @@ import {
   VILLAGER_TRAIN_TICKS,
   type VillagerJob,
 } from '../../content/economy';
+import { FLEE_RADIUS } from '../../content/rts';
 import { cellPos, hidx, worldToCell } from '../../worldgen/coords';
 import type { WorldData } from '../../worldgen/types';
 import { Biome, GRID } from '../../worldgen/types';
 import { dropoffsOf, workplaceSlots, workplacesOf } from '../buildings';
+import { hostileToRealm, totalUnits } from '../combat';
 import type { SimEvent } from '../events';
 import { resolveStat } from '../modifiers';
 import type { GameState, SimSettlement, Villager } from '../state';
@@ -155,6 +157,19 @@ export function villagersSystem(state: GameState, out: SimEvent[]): void {
     v.prevZ = v.z;
   }
 
+  // flee (M13): towns with a hostile army in sight call everyone home
+  const threatened = new Set<number>();
+  for (const s of state.settlements) {
+    const site = state.world.settlements[s.id];
+    for (const a of state.armies) {
+      if (totalUnits(a.units) <= 0 || !hostileToRealm(state, s.ownerRealm, a)) continue;
+      if (Math.hypot(a.x - site.x, a.z - site.z) <= FLEE_RADIUS) {
+        threatened.add(s.id);
+        break;
+      }
+    }
+  }
+
   for (const s of state.settlements) {
     const site = state.world.settlements[s.id];
 
@@ -225,6 +240,16 @@ export function villagersSystem(state: GameState, out: SimEvent[]): void {
     const s = state.settlements[v.settlement];
     if (!s) continue;
     const site = state.world.settlements[v.settlement];
+
+    // flee override (M13): drop the day's work and make for the town center.
+    // Framed as a haul home, so the ordinary toDropoff arrival deposits any
+    // carry and re-derives the workplace once the danger has passed.
+    if (v.job !== 'idle' && threatened.has(v.settlement)) {
+      v.phase = 'toDropoff';
+      v.tx = site.x;
+      v.tz = site.z;
+      v.timer = 0;
+    }
 
     if (v.job === 'idle') {
       // drift home and loiter by the town center

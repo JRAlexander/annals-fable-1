@@ -181,6 +181,7 @@ export function splitUnits(state: GameState, ids: ReadonlySet<number>, home: num
     cellProgress: 0,
     objective: null,
     phase: 'idle',
+    stance: 'defensive',
     battleStartStrength: 0,
   };
   state.armies.push(army);
@@ -216,6 +217,7 @@ export function musterDefenders(
     cellProgress: 0,
     objective: null,
     phase: 'idle', // the engagement pass locks the pair on the next tick
+    stance: 'standGround', // defenders never wander off their walls
     battleStartStrength: 0,
     defending,
   };

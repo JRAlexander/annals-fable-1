@@ -46,6 +46,7 @@ function spawnWildArmy(
     cellProgress: 0,
     objective: { kind: 'attackSettlement', settlement: target },
     phase: 'marching',
+    stance: 'standGround', // the wilds keep their own counsel — no autonomy layer
     battleStartStrength: 0,
   };
   state.armies.push(army);

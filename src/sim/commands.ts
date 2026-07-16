@@ -8,7 +8,14 @@ import { UNITS } from '../content/units';
 import { hidx, worldToCell } from '../worldgen/coords';
 import { GRID, WORLD_SIZE } from '../worldgen/types';
 import type { SimEvent } from './events';
-import type { GameState, Realm, RealmId } from './state';
+import {
+  ARMY_STANCES,
+  type ArmyStance,
+  type GameState,
+  type RallyTarget,
+  type Realm,
+  type RealmId,
+} from './state';
 import { routePath } from './systems/armies';
 import { spawnArmyUnits, splitUnits } from './unitStore';
 
@@ -50,7 +57,11 @@ export type Command =
   // RTS mode (M7+), same envelope, typed now:
   | { kind: 'moveUnits'; units: number[]; to: Vec2 }
   | { kind: 'attackTarget'; units: number[]; target: number; targetKind: 'army' | 'camp' | 'settlement' }
-  | { kind: 'placeBuilding'; building: BuildingId; at: Vec2 };
+  | { kind: 'placeBuilding'; building: BuildingId; at: Vec2 }
+  // Unit autonomy (M13) — appended kinds, so v3 command logs replay unchanged:
+  | { kind: 'setStance'; army: number; stance: ArmyStance }
+  | { kind: 'setRally'; settlement: number; rally: RallyTarget | null }
+  | { kind: 'setGovernor'; settlement: number; enabled: boolean };
 
 export interface IssuedCommand {
   /** Tick it executes on (stamped at enqueue time). */
@@ -445,6 +456,7 @@ export function applyCommands(state: GameState, issued: IssuedCommand[], out: Si
           cellProgress: 0,
           objective: null,
           phase: 'idle' as const,
+          stance: 'defensive' as const,
           battleStartStrength: 0,
         };
         state.armies.push(formed);
@@ -467,6 +479,8 @@ export function applyCommands(state: GameState, issued: IssuedCommand[], out: Si
           reject(out, realm, 'the army is locked in battle');
           break;
         }
+        // a successful direct order overrides the autonomy layer (M13): each
+        // accepting branch below clears the return-to-post memory
         if (cmd.objective.kind === 'attackCamp') {
           const camp = state.camps[cmd.objective.camp];
           const site = state.world.camps[cmd.objective.camp];
@@ -474,6 +488,7 @@ export function applyCommands(state: GameState, issued: IssuedCommand[], out: Si
             reject(out, realm, 'no such camp remains');
             break;
           }
+          delete army.post;
           army.objective = { kind: 'attackCamp', camp: camp.id };
           army.phase = 'marching';
           routePath(state, army, site.i, site.j);
@@ -494,6 +509,7 @@ export function applyCommands(state: GameState, issued: IssuedCommand[], out: Si
             break;
           }
           const site = state.world.settlements[target.id];
+          delete army.post;
           army.objective = { kind: 'attackSettlement', settlement: target.id };
           army.phase = 'marching';
           routePath(state, army, site.i, site.j);
@@ -508,6 +524,7 @@ export function applyCommands(state: GameState, issued: IssuedCommand[], out: Si
             reject(out, realm, 'an army cannot march into the sea');
             break;
           }
+          delete army.post;
           army.objective = { kind: 'moveTo', i, j };
           army.phase = 'marching';
           routePath(state, army, i, j);
@@ -527,10 +544,12 @@ export function applyCommands(state: GameState, issued: IssuedCommand[], out: Si
             reject(out, realm, `you are not at war with ${state.realms[target.ownerRealm]?.name ?? 'them'}`);
             break;
           }
+          delete army.post;
           army.objective = { kind: 'attackArmy', army: target.id };
           army.phase = 'marching';
           routePath(state, army, ...nearestCell(target.x, target.z));
         } else {
+          delete army.post;
           army.objective = { kind: 'returnHome' };
           army.phase = 'returning';
           const home = state.world.settlements[army.home];
@@ -671,6 +690,76 @@ export function applyCommands(state: GameState, issued: IssuedCommand[], out: Si
           }
           out.push({ kind: 'armyFormed', army: det.id, settlement: home, strength: chosen.length });
         }
+        break;
+      }
+      case 'setStance': {
+        const army = state.armies.find((a) => a.id === cmd.army);
+        if (!army) {
+          reject(out, realm, `no such army ${cmd.army}`);
+          break;
+        }
+        if (army.ownerRealm !== realm) {
+          reject(out, realm, `army ${cmd.army} not yours`);
+          break;
+        }
+        if (!ARMY_STANCES.includes(cmd.stance)) {
+          reject(out, realm, `unknown stance '${cmd.stance}'`);
+          break;
+        }
+        army.stance = cmd.stance;
+        // an army told to stand fast forgets the post it was walking back to
+        if (cmd.stance === 'standGround') delete army.post;
+        break;
+      }
+      case 'setRally': {
+        const s = state.settlements[cmd.settlement];
+        if (!s) {
+          reject(out, realm, `no such settlement ${cmd.settlement}`);
+          break;
+        }
+        if (s.ownerRealm !== realm) {
+          reject(out, realm, `settlement ${cmd.settlement} not owned by realm ${realm}`);
+          break;
+        }
+        const r = cmd.rally;
+        if (r === null) {
+          delete s.rally;
+          break;
+        }
+        if (r.kind === 'army') {
+          const target = state.armies.find((a) => a.id === r.army);
+          if (!target || target.ownerRealm !== realm || target.defending) {
+            reject(out, realm, 'no army of yours stands ready to be reinforced');
+            break;
+          }
+          s.rally = { kind: 'army', army: target.id };
+        } else if (r.kind === 'point') {
+          const { i, j } = r;
+          if (!Number.isInteger(i) || !Number.isInteger(j) || i < 0 || j < 0 || i >= GRID || j >= GRID) {
+            reject(out, realm, 'no such place');
+            break;
+          }
+          if (!Number.isFinite(state.world.navCost[hidx(i, j)])) {
+            reject(out, realm, 'soldiers cannot muster in the sea');
+            break;
+          }
+          s.rally = { kind: 'point', i, j };
+        } else {
+          reject(out, realm, 'invalid rally order');
+        }
+        break;
+      }
+      case 'setGovernor': {
+        const s = state.settlements[cmd.settlement];
+        if (!s) {
+          reject(out, realm, `no such settlement ${cmd.settlement}`);
+          break;
+        }
+        if (s.ownerRealm !== realm) {
+          reject(out, realm, `settlement ${cmd.settlement} not owned by realm ${realm}`);
+          break;
+        }
+        s.governor = cmd.enabled === true;
         break;
       }
       // every command kind is now live — the M1 envelope is fully realized
