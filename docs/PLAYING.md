@@ -141,6 +141,33 @@ the two right panels, and **a direct order from you always overrides autonomy**.
   over, until the map is known (or you toggle it off). It still fights back
   as normal if caught, and it resumes scouting after.
 
+### Full autopilot (the realm runs itself)
+
+Two more offices complete the picture — with them all on, you set strategy
+and the realm does the rest:
+
+- **⚖ Steward** (checkbox in the Villagers panel, per town): the town queues
+  its own buildings by the same book the rival realms use — farms first,
+  houses next, then the working buildings — and the realm picks its own
+  research whenever the slot is idle (cheapest first, then the age advance).
+  The Construct cards stay live: anything **you** queue pre-empts the steward
+  for the day. The steward will never start a **Wonder** — that gamble is
+  yours alone.
+- **⚜ Marshal** (checkbox at the head of the Armies list, realm-wide): a
+  military autopilot. Every day it trains garrisons toward a rising target at
+  each barracks town (never below 300 food, never at towns where you've set a
+  rally — your plans win), forms its own armies (marked **⚜**, shown as
+  `troops/muster`), pulls badly bled ones home to refill, **clears bandit
+  camps it can beat** — it does the same power arithmetic behind the **✓**
+  marks in the camp dropdown — and stations the rest at your most exposed
+  towns, where their defensive stance intercepts raiders. The marshal **never
+  declares war and never attacks another realm's towns**: conquest stays in
+  your hands. Marshal armies still obey your direct orders.
+- In battle, ranged soldiers now **kite** — backing away from melee while
+  still firing — and every soldier picks out the enemy it counters when one
+  is in reach. Bring the counter units all the same; kiters are slower
+  backing up than their hunters are closing in.
+
 | Key | Action |
 |---|---|
 | `Space` | pause / resume |

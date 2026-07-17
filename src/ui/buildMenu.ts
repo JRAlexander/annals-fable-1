@@ -85,6 +85,18 @@ export function createBuildMenu(
     enqueue({ kind: 'setGovernor', settlement: selected, enabled: governorBox.checked });
   });
 
+  // steward (M14b): the town also queues buildings & research by the book.
+  // Construct cards stay live — the steward only acts on an empty queue, so
+  // anything the player queues simply pre-empts it.
+  const stewardRow = document.createElement('label');
+  stewardRow.className = 'bm-qrow bm-governor';
+  stewardRow.innerHTML = `<input type="checkbox" id="bm-steward" /> ⚖ Steward <i class="bm-hint">queues buildings &amp; research</i>`;
+  villagersEl.appendChild(stewardRow);
+  const stewardBox = stewardRow.querySelector('input') as HTMLInputElement;
+  stewardBox.addEventListener('change', () => {
+    enqueue({ kind: 'setSteward', settlement: selected, enabled: stewardBox.checked });
+  });
+
   // villager job rows (M12): counts + −/+ buttons, the sliders are history
   const trainBtn = document.createElement('button');
   trainBtn.className = 'bm-build';
@@ -191,6 +203,7 @@ export function createBuildMenu(
 
       lastState = state;
       if (governorBox.checked !== s.governor) governorBox.checked = s.governor;
+      if (stewardBox.checked !== s.steward) stewardBox.checked = s.steward;
       governorRow.title = s.governor ? 'the governor manages this town’s villagers' : '';
       const villagers = state.villagers.filter((v) => v.settlement === s.id);
       const idle = villagers.filter((v) => v.job === 'idle').length;
