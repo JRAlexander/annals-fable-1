@@ -38,6 +38,8 @@ export interface Realm {
   researchedTechs: TechId[];
   research: ResearchJob | null;
   atWarWith: RealmId[];
+  /** The marshal runs this realm's military by the book (M14). Player realms only. */
+  marshal: boolean;
 }
 
 /** How an idle army occupies itself (M13). */
@@ -75,6 +77,8 @@ export interface SimSettlement {
   rally?: RallyTarget;
   /** The governor runs this town's villager economy by the AI's book (M13). */
   governor: boolean;
+  /** The steward queues this town's buildings (and the realm's research) (M14). */
+  steward: boolean;
 }
 
 export interface ConstructionJob {
@@ -131,6 +135,10 @@ export interface Army {
   phase: 'idle' | 'marching' | 'fighting' | 'returning';
   /** Idle conduct (M13): hunt, intercept raids, or stand fast. */
   stance: ArmyStance;
+  /** Headcount when the army was raised — the under-strength reference (M14). */
+  muster: number;
+  /** Raised and commanded by the marshal (M14); absent on player-led armies. */
+  marshal?: true;
   /** Cell a defensive army left to intercept — it walks back after (M13). Clear with `delete`. */
   post?: { i: number; j: number };
   /** Strength when the current battle began — the rout threshold reference. */
@@ -329,6 +337,7 @@ export function initGameState(world: WorldData, playerCulture: CultureId = 'vale
     researchedTechs: [],
     research: null,
     atWarWith: [],
+    marshal: false,
   });
   const realms = [
     mkRealm(0, true, playerCulture),
@@ -351,6 +360,7 @@ export function initGameState(world: WorldData, playerCulture: CultureId = 'vale
       garrison: {},
       placed: seedPlacements(world, site, buildings),
       governor: false,
+      steward: false,
     };
     s.popCap = HOUSING_BASE[site.tier] + buildingContrib(s).housing;
     return s;

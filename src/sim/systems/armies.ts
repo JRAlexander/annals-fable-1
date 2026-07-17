@@ -1,4 +1,4 @@
-import { DEFEND_RADIUS, ENGAGE_RANGE, STANCE_SIGHT } from '../../content/rts';
+import { DEFEND_RADIUS, ENGAGE_RANGE, ROUT_FRACTION, STANCE_SIGHT } from '../../content/rts';
 import type { ResourceId, UnitId } from '../../content/schema';
 import {
   CAPTURE_VILLAGER_LOSS,
@@ -254,9 +254,10 @@ function settlementFalls(state: GameState, army: Army, target: SimSettlement, ou
   killVillagers(state, target.id, CAPTURE_VILLAGER_LOSS);
   target.garrison = {};
   target.trainQueue = [];
-  // the captor's writ replaces the old orders (M13)
+  // the captor's writ replaces the old orders (M13/M14)
   delete target.rally;
   target.governor = false;
+  target.steward = false;
   out.push({ kind: 'settlementCaptured', settlement: target.id, by: army.ownerRealm, from });
   army.engagedWith = undefined;
   goHomeward(state, army);
@@ -557,8 +558,8 @@ function fightField(state: GameState, army: Army, out: SimEvent[], survivors: Ar
     const home = state.world.settlements[loser.home];
     if (home) routePath(state, loser, home.i, home.j);
   };
-  const iRout = army.ownerRealm !== WILD_REALM && !army.defending && mine < myStart * 0.3;
-  const foeRouts = foe.ownerRealm !== WILD_REALM && !foe.defending && theirs < foeStart * 0.3;
+  const iRout = army.ownerRealm !== WILD_REALM && !army.defending && mine < myStart * ROUT_FRACTION;
+  const foeRouts = foe.ownerRealm !== WILD_REALM && !foe.defending && theirs < foeStart * ROUT_FRACTION;
   if (iRout || foeRouts) {
     if (iRout) {
       flee(army);

@@ -1,4 +1,11 @@
-import { ATTACK_COOLDOWN, FORT_SHIELD, MELEE_REACH, RANGE_UNIT } from '../../content/rts';
+import {
+  ATTACK_COOLDOWN,
+  FORT_SHIELD,
+  KITE_MIN,
+  KITE_STEP,
+  MELEE_REACH,
+  RANGE_UNIT,
+} from '../../content/rts';
 import { UNITS } from '../../content/units';
 import { resolveStat } from '../modifiers';
 import type { Army, FieldUnit, GameState } from '../state';
@@ -32,6 +39,12 @@ interface TypeStats {
   armorMelee: number;
   armorPierce: number;
   speed: number;
+  /** Lead tag — what attackBonuses match against. */
+  tag: string;
+  /** range === 0: can be kited (M14). */
+  melee: boolean;
+  /** Tags this type counters, or null — the focus-fire set (M14). */
+  bonusTags: Set<string> | null;
 }
 
 /** Modifier resolution is realm-wide scans — do it once per type per tick. */
@@ -53,6 +66,9 @@ function statsFor(state: GameState, army: Army, units: { type: string }[]): Map<
         unitTag: tag,
       }),
       speed: resolveStat({ state, realm: army.ownerRealm }, def.speed, { stat: 'unitSpeed', unitTag: tag }),
+      tag,
+      melee: (def.range ?? 0) === 0,
+      bonusTags: def.attackBonuses?.length ? new Set(def.attackBonuses.map((b) => b.tag)) : null,
     });
   }
   return stats;
@@ -79,9 +95,23 @@ export function fightUnits(state: GameState, a: Army, b: Army, fort?: FortState)
     if (!def) return;
 
     // nearest living enemy, ties to the lower id (stable id-sorted arrays);
-    // squared distances — 180k hypots a tick would eat the budget alone
+    // squared distances — 180k hypots a tick would eat the budget alone.
+    // Focus fire (M14): an in-reach enemy this unit COUNTERS outranks the
+    // merely nearest one. The nearest melee enemy is tracked for kiting.
+    // All per-type facts come from the precomputed stats maps — the inner
+    // loop must stay one Map lookup and arithmetic, nothing more.
+    const myStats = ownStats.get(unit.type);
+    if (!myStats) return;
+    const reach = def.range > 0 ? def.range * RANGE_UNIT : MELEE_REACH;
+    const reach2 = reach * reach;
+    const bonusTags = myStats.bonusTags;
+    const trackMelee = def.range > 0; // only kiters care where the blades are
     let target: FieldUnit | null = null;
     let bestD2 = Number.POSITIVE_INFINITY;
+    let focus: FieldUnit | null = null;
+    let focusD2 = Number.POSITIVE_INFINITY;
+    let meleeD2 = Number.POSITIVE_INFINITY;
+    let melee: FieldUnit | null = null;
     for (const e of enemySide) {
       if (e.hp <= 0) continue;
       const dx = e.x - unit.x;
@@ -91,14 +121,28 @@ export function fightUnits(state: GameState, a: Army, b: Army, fort?: FortState)
         bestD2 = d2;
         target = e;
       }
+      if ((trackMelee || bonusTags) && d2 < Math.max(meleeD2, focusD2)) {
+        const em = enemyStats.get(e.type);
+        if (em) {
+          if (trackMelee && em.melee && d2 < meleeD2) {
+            meleeD2 = d2;
+            melee = e;
+          }
+          if (bonusTags && d2 <= reach2 && d2 < focusD2 && bonusTags.has(em.tag)) {
+            focusD2 = d2;
+            focus = e;
+          }
+        }
+      }
+    }
+    if (focus) {
+      target = focus;
+      bestD2 = focusD2;
     }
 
     const fortToBurn = fort && fort.side === enemyArmy.id && fort.hp - fortDamage > 0;
-    const reach = def.range > 0 ? def.range * RANGE_UNIT : MELEE_REACH;
 
     // siege engines spend their blows on the walls while walls stand
-    const myStats = ownStats.get(unit.type);
-    if (!myStats) return;
     if (fortToBurn && def.siegeMult) {
       if (unit.cd === 0) {
         fortDamage += myStats.atk * def.siegeMult;
@@ -108,7 +152,15 @@ export function fightUnits(state: GameState, a: Army, b: Army, fort?: FortState)
     }
 
     if (!target) return;
-    if (bestD2 > reach * reach) {
+    // kite (M14): a ranged soldier backs away from melee pressing too close —
+    // at HALF chase pace, so the counters built to catch it still do — and
+    // keeps firing as it goes (the strike check below still runs this tick)
+    if (def.range > 0 && !def.siegeMult && melee && meleeD2 < KITE_MIN * KITE_MIN) {
+      const d = Math.sqrt(meleeD2) || 1;
+      const step = Math.min(myStats.speed * KITE_STEP, KITE_MIN - d);
+      unit.x -= ((melee.x - unit.x) / d) * step;
+      unit.z -= ((melee.z - unit.z) / d) * step;
+    } else if (bestD2 > reach * reach) {
       // close the distance
       const bestD = Math.sqrt(bestD2);
       const step = Math.min(bestD - reach * 0.8, myStats.speed * 6);

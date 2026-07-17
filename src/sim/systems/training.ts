@@ -55,6 +55,7 @@ export function trainingSystem(state: GameState, out: SimEvent[]): void {
         objective: { kind: 'moveTo' as const, i: s.rally.i, j: s.rally.j },
         phase: 'marching' as const,
         stance: 'defensive' as const,
+        muster: totalUnits(units),
         battleStartStrength: 0,
       };
       state.armies.push(band);

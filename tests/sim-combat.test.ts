@@ -35,6 +35,7 @@ function conjure(state: GameState, ownerRealm: number, counts: UnitCounts, x: nu
     objective: null,
     phase: 'fighting',
     stance: 'standGround',
+    muster: totalUnits(counts),
     battleStartStrength: totalUnits(counts),
     engagedWith: -1, // arena-managed
   };
