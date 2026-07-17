@@ -75,6 +75,16 @@ export function createBuildMenu(
     buttons.set(id, { btn: b, sub: b.querySelector('span') as HTMLElement });
   }
 
+  // governor (M13b): hand this town's villager economy to the AI's book
+  const governorRow = document.createElement('label');
+  governorRow.className = 'bm-qrow bm-governor';
+  governorRow.innerHTML = `<input type="checkbox" id="bm-governor" /> 🏛 Governor <i class="bm-hint">runs villagers for you</i>`;
+  villagersEl.appendChild(governorRow);
+  const governorBox = governorRow.querySelector('input') as HTMLInputElement;
+  governorBox.addEventListener('change', () => {
+    enqueue({ kind: 'setGovernor', settlement: selected, enabled: governorBox.checked });
+  });
+
   // villager job rows (M12): counts + −/+ buttons, the sliders are history
   const trainBtn = document.createElement('button');
   trainBtn.className = 'bm-build';
@@ -180,19 +190,22 @@ export function createBuildMenu(
       }
 
       lastState = state;
+      if (governorBox.checked !== s.governor) governorBox.checked = s.governor;
+      governorRow.title = s.governor ? 'the governor manages this town’s villagers' : '';
       const villagers = state.villagers.filter((v) => v.settlement === s.id);
       const idle = villagers.filter((v) => v.job === 'idle').length;
       const training = s.villagerQueue.remaining;
       idleEl.textContent = `${villagers.length} villagers · ${idle} idle${training ? ` · ${training} training` : ''}`;
       trainBtn.disabled =
+        s.governor ||
         s.pop - 1 < 30 ||
         !Object.entries(VILLAGER_COST).every(([r, n]) => realm.stock[r as ResourceId] >= (n as number));
       for (const [job, ui] of jobRows) {
         const assigned = villagers.filter((v) => v.job === job).length;
         const cap = job === 'wood' || job === 'stone' ? null : workplaceSlots(s, JOB_RESOURCE[job]);
         ui.label.textContent = `${assigned}/${s.jobTargets[job]}${cap !== null ? ` (cap ${cap})` : ''}`;
-        ui.plus.disabled = cap !== null && s.jobTargets[job] >= cap;
-        ui.minus.disabled = s.jobTargets[job] <= 0;
+        ui.plus.disabled = s.governor || (cap !== null && s.jobTargets[job] >= cap);
+        ui.minus.disabled = s.governor || s.jobTargets[job] <= 0;
       }
     },
   };

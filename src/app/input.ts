@@ -22,6 +22,8 @@ export interface InputHandle {
   readonly unitSelection: Set<number>;
   /** Arm (or disarm with null) free-placement mode for a building (M7b). */
   setPlacement(building: BuildingId | null): void;
+  /** Arm (or disarm with null) rally-flag picking for a settlement (M13b). */
+  setRallyPick(settlement: number | null): void;
   /** Programmatic army selection (control-group recall, M11). Fires onSelection. */
   selectArmies(ids: number[]): void;
   dispose(): void;
@@ -123,6 +125,13 @@ export function createInput(opts: {
     scene.scene.add(ghost);
   };
 
+  // --- rally-flag picking (M13b): the next ground click plants the flag ---
+  let rallyPick: number | null = null;
+  const setRallyPick = (settlement: number | null): void => {
+    rallyPick = settlement;
+    canvas.style.cursor = settlement === null ? '' : 'crosshair';
+  };
+
   const setSelection = (ids: number[]) => {
     selection.clear();
     unitSelection.clear();
@@ -214,6 +223,16 @@ export function createInput(opts: {
       }
       return;
     }
+    if (rallyPick !== null) {
+      boxEl.style.display = 'none';
+      const point = castGround(ev);
+      if (point) {
+        const { i, j } = worldToCell(point.x, point.z);
+        enqueue({ kind: 'setRally', settlement: rallyPick, rally: { kind: 'point', i, j } });
+      }
+      setRallyPick(null); // one flag per arming, like placement
+      return;
+    }
     const wasBox = boxEl.style.display === 'block';
     boxEl.style.display = 'none';
     if (wasBox) {
@@ -256,6 +275,10 @@ export function createInput(opts: {
     ev.preventDefault();
     if (placing) {
       clearGhost();
+      return;
+    }
+    if (rallyPick !== null) {
+      setRallyPick(null);
       return;
     }
     if (unitSelection.size > 0) {
@@ -355,6 +378,7 @@ export function createInput(opts: {
   const onKeyDown = (ev: KeyboardEvent) => {
     if (ev.code === 'Escape') {
       if (placing) clearGhost();
+      else if (rallyPick !== null) setRallyPick(null);
       else setSelection([]);
     }
   };
@@ -369,6 +393,7 @@ export function createInput(opts: {
     selection,
     unitSelection,
     setPlacement,
+    setRallyPick,
     selectArmies: setSelection,
     dispose() {
       canvas.removeEventListener('pointerdown', onPointerDown);

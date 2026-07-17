@@ -22,6 +22,7 @@ import { createMinimap } from '../ui/minimap';
 import { createTechMenu } from '../ui/techMenu';
 import { createToasts } from '../ui/toasts';
 import { generateWorld } from '../worldgen/world';
+import { createAutoExplore } from './autoExplore';
 import { createCameraControls } from './cameraControls';
 import { createControlGroups } from './controlGroups';
 import { createInput, describeSelection } from './input';
@@ -244,7 +245,14 @@ async function boot(): Promise<void> {
     ping: (x, z) => minimap.ping(x, z),
   });
   const buildMenu = createBuildMenu(buildMenuEl, enqueue, (building) => input.setPlacement(building));
-  const armyPanel = createArmyPanel(armyPanelEl, enqueue, culture);
+  // lazy closures: input/autoExplore are created just below, before any update() runs
+  const armyPanel = createArmyPanel(armyPanelEl, enqueue, culture, {
+    rallyPick: (settlement) => input.setRallyPick(settlement),
+    explore: {
+      toggle: (id) => autoExplore.toggle(id),
+      has: (id) => autoExplore.has(id),
+    },
+  });
   const techMenu = createTechMenu(techMenuEl, enqueue, culture);
   const constructed = createConstructed(scene.scene, world);
   const armies = createArmies(scene.scene, world);
@@ -265,6 +273,7 @@ async function boot(): Promise<void> {
       selChipEl.style.display = input.selection.size || input.unitSelection.size ? 'block' : 'none';
     },
   });
+  const autoExplore = createAutoExplore({ state, fogMask, enqueue });
   let ended = state.outcome !== null; // a replayed ending is not re-announced
   const loop = startLoop({
     simTick: () => {
@@ -272,6 +281,7 @@ async function boot(): Promise<void> {
       chronicle.push(events);
       toasts.push(events, state);
       refreshFog();
+      autoExplore.update(); // enrolled idle armies pick their next frontier
       // per tick, not per frame — at 12× thirty ticks can pass per rAF
       const combatDiff = tracker.diff(state);
       combatDiff.deaths.push(...villagerTracker.diff(state)); // the fields bury their own
@@ -338,6 +348,7 @@ async function boot(): Promise<void> {
     input,
     cameraControls,
     minimap,
+    autoExplore,
   };
 
   window.addEventListener('keydown', (e) => {

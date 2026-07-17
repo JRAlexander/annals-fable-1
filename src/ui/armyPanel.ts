@@ -4,9 +4,21 @@ import type { UnitId } from '../content/schema';
 import { UNITS } from '../content/units';
 import { totalUnits } from '../sim/combat';
 import type { Command } from '../sim/commands';
-import type { GameState } from '../sim/state';
+import type { ArmyStance, GameState } from '../sim/state';
 
 const TRAIN_BATCH = 5;
+
+const STANCE_LABEL: Record<ArmyStance, string> = {
+  defensive: '🛡 Defensive',
+  aggressive: '⚔ Aggressive',
+  standGround: '⚓ Stand ground',
+};
+
+/** App-layer hooks (M13b): rally-flag picking and the auto-explore roster. */
+export interface ArmyPanelHooks {
+  rallyPick(settlement: number): void;
+  explore: { toggle(id: number): boolean; has(id: number): boolean };
+}
 
 function costText(unit: UnitId): string {
   return Object.entries(UNITS[unit].cost)
@@ -27,6 +39,7 @@ export function createArmyPanel(
   el: HTMLElement,
   enqueue: (cmd: Command) => void,
   culture?: string,
+  hooks?: ArmyPanelHooks,
 ): ArmyPanel {
   el.innerHTML = `
     <div class="bm-head"><select id="ap-settlement"></select><span id="ap-count"></span></div>
@@ -36,6 +49,8 @@ export function createArmyPanel(
     <div class="bm-section">Garrison</div>
     <div id="ap-garrison"><i>empty</i></div>
     <button id="ap-form" class="ap-form">Form army from garrison</button>
+    <div class="bm-section">Rally <i class="bm-hint">where fresh troops go</i></div>
+    <div id="ap-rally"></div>
     <div class="bm-section">Armies</div>
     <div id="ap-armies"><i>none</i></div>
     <div class="bm-section">Diplomacy</div>
@@ -46,6 +61,7 @@ export function createArmyPanel(
   const queueEl = el.querySelector('#ap-queue') as HTMLElement;
   const garrisonEl = el.querySelector('#ap-garrison') as HTMLElement;
   const armiesEl = el.querySelector('#ap-armies') as HTMLElement;
+  const rallyEl = el.querySelector('#ap-rally') as HTMLElement;
   const diplomacyEl = el.querySelector('#ap-diplomacy') as HTMLElement;
   const formBtn = el.querySelector('#ap-form') as HTMLButtonElement;
 
@@ -122,9 +138,15 @@ export function createArmyPanel(
       const sig = [
         s.trainQueue.map((q) => `${q.unit}:${q.remaining}:${q.progress | 0}`).join(','),
         JSON.stringify(s.garrison),
-        state.armies.map((a) => `${a.id}:${a.phase}:${totalUnits(a.units)}`).join(','),
+        state.armies
+          .map(
+            (a) =>
+              `${a.id}:${a.phase}:${totalUnits(a.units)}:${a.stance}:${hooks?.explore.has(a.id) ? 1 : 0}`,
+          )
+          .join(','),
         state.realms[0].atWarWith.join(','),
         ownSig,
+        JSON.stringify(s.rally ?? null),
       ].join('|');
       if (sig === lastSig) return;
       lastSig = sig;
@@ -144,6 +166,36 @@ export function createArmyPanel(
       formBtn.disabled = garrisonRows.length === 0;
 
       const myArmies = state.armies.filter((a) => a.ownerRealm === 0);
+
+      // rally (M13b): garrison (default) | reinforce a field army | a map flag
+      rallyEl.innerHTML = '';
+      const rallySel = document.createElement('select');
+      const addOpt = (value: string, text: string) => {
+        const opt = document.createElement('option');
+        opt.value = value;
+        opt.textContent = text;
+        rallySel.appendChild(opt);
+      };
+      addOpt('garrison', '🏰 Garrison (hold at home)');
+      for (const a of myArmies.filter((x) => !x.defending)) {
+        addOpt(`army:${a.id}`, `⚔ Reinforce Army ${a.id} (${totalUnits(a.units)} troops)`);
+      }
+      if (s.rally?.kind === 'point') addOpt('flag-current', `📍 Flag at (${s.rally.i}, ${s.rally.j})`);
+      if (hooks) addOpt('flag-new', '📍 Place rally flag — click the map');
+      rallySel.value =
+        s.rally === undefined
+          ? 'garrison'
+          : s.rally.kind === 'army'
+            ? `army:${s.rally.army}`
+            : 'flag-current';
+      rallySel.addEventListener('change', () => {
+        const v = rallySel.value;
+        if (v === 'garrison') enqueue({ kind: 'setRally', settlement: s.id, rally: null });
+        else if (v === 'flag-new') hooks?.rallyPick(s.id);
+        else if (v.startsWith('army:'))
+          enqueue({ kind: 'setRally', settlement: s.id, rally: { kind: 'army', army: Number(v.slice(5)) } });
+      });
+      rallyEl.appendChild(rallySel);
       armiesEl.innerHTML = myArmies.length ? '' : '<i>none</i>';
       for (const a of myArmies) {
         const row = document.createElement('div');
@@ -151,6 +203,29 @@ export function createArmyPanel(
         const label = document.createElement('span');
         label.textContent = `⚔ Army ${a.id} · ${totalUnits(a.units)} troops · ${a.phase}`;
         row.appendChild(label);
+        // stance (M13b): how the army occupies itself when idle
+        const stanceSel = document.createElement('select');
+        stanceSel.title = 'Stance: what this army does on its own';
+        for (const [value, text] of Object.entries(STANCE_LABEL)) {
+          const opt = document.createElement('option');
+          opt.value = value;
+          opt.textContent = text;
+          stanceSel.appendChild(opt);
+        }
+        stanceSel.value = a.stance;
+        stanceSel.addEventListener('change', () =>
+          enqueue({ kind: 'setStance', army: a.id, stance: stanceSel.value as ArmyStance }),
+        );
+        row.appendChild(stanceSel);
+        if (hooks) {
+          const exploreBtn = document.createElement('button');
+          const on = hooks.explore.has(a.id);
+          exploreBtn.textContent = on ? '⌖ Exploring…' : '⌖ Explore';
+          exploreBtn.title = 'Auto-explore: march to unexplored ground whenever idle';
+          exploreBtn.classList.toggle('ap-explore-on', on);
+          exploreBtn.addEventListener('click', () => hooks.explore.toggle(a.id));
+          row.appendChild(exploreBtn);
+        }
         if (a.phase === 'idle') {
           const targetSel = document.createElement('select');
           for (const camp of state.camps) {

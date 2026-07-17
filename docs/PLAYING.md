@@ -110,6 +110,37 @@ coming. (The chronicle's annalist, as ever, knows all — read it.)
 - Hostile armies that meet in the open **fight a field battle** — you can intercept raiders and invading armies before they reach your towns (and your token forces can be cut down on the road, so escort matters).
 - The panel dropdown still works for everything if you prefer menus.
 
+## Unit autonomy (let the realm run itself)
+
+Armies and villagers now act sensibly on their own — every knob below lives in
+the two right panels, and **a direct order from you always overrides autonomy**.
+
+- **Stances** (dropdown on each army row in the War ministry):
+
+  | Stance | An idle army will… |
+  |---|---|
+  | 🛡 **Defensive** *(default)* | march out to intercept **raiders bound for your towns** (up to 30 cells), then walk back to the post it left |
+  | ⚔ **Aggressive** | hunt **anything hostile in sight** (about as far as it can see through the fog) |
+  | ⚓ **Stand ground** | nothing — it moves only on your orders |
+
+- **Rally** (dropdown under the Garrison): choose where fresh troops go the
+  moment training finishes. **Reinforce Army N** trickles every recruit
+  straight onto the field — the army grows where it stands. **📍 Place rally
+  flag** lets you click the map; the garrison then marches for the flag in
+  bands of 10. Garrison (the default) keeps troops home.
+- **🏛 Governor** (checkbox in the Villagers panel): hands that town's
+  villager training and job assignments to the same book the rival realms
+  play by — food first, then wood. Your manual −/+ buttons grey out while
+  the governor holds the ledger; untick to take it back.
+- **Villagers flee on their own**: when a hostile army comes within sight of
+  a town, its workers drop what they're doing and carry their baskets home,
+  holding at the Town Center until the danger passes. Fewer raid deaths, no
+  clicks required.
+- **⌖ Explore** (button on each army row): the army becomes a scout — every
+  time it goes idle it marches for the nearest unexplored ground, over and
+  over, until the map is known (or you toggle it off). It still fights back
+  as normal if caught, and it resumes scouting after.
+
 | Key | Action |
 |---|---|
 | `Space` | pause / resume |
@@ -118,7 +149,7 @@ coming. (The chronicle's annalist, as ever, knows all — read it.)
 | `1`–`9` | recall control group (double-tap centers camera) |
 | `Ctrl+1`–`9` | assign selected armies to a group |
 | `T` | tech tree |
-| `Esc` | cancel placement / clear selection |
+| `Esc` | cancel placement or rally-flag pick / clear selection |
 
 ## Your first hour, step by step
 
