@@ -1,8 +1,9 @@
 import { BUILDINGS } from '../content/buildings';
 import { CULTURES } from '../content/cultures';
+import { MARSHAL_ATTACK_RATIO } from '../content/rts';
 import type { UnitId } from '../content/schema';
 import { UNITS } from '../content/units';
-import { totalUnits } from '../sim/combat';
+import { campThreat, power, totalUnits } from '../sim/combat';
 import type { Command } from '../sim/commands';
 import type { ArmyStance, GameState } from '../sim/state';
 
@@ -52,6 +53,7 @@ export function createArmyPanel(
     <div class="bm-section">Rally <i class="bm-hint">where fresh troops go</i></div>
     <div id="ap-rally"></div>
     <div class="bm-section">Armies</div>
+    <label id="ap-marshal-row" class="bm-governor"><input type="checkbox" id="ap-marshal" /> ⚜ Marshal <i class="bm-hint">runs the realm's defense for you</i></label>
     <div id="ap-armies"><i>none</i></div>
     <div class="bm-section">Diplomacy</div>
     <div id="ap-diplomacy"></div>
@@ -64,6 +66,10 @@ export function createArmyPanel(
   const rallyEl = el.querySelector('#ap-rally') as HTMLElement;
   const diplomacyEl = el.querySelector('#ap-diplomacy') as HTMLElement;
   const formBtn = el.querySelector('#ap-form') as HTMLButtonElement;
+  const marshalBox = el.querySelector('#ap-marshal') as HTMLInputElement;
+  marshalBox.addEventListener('change', () => {
+    enqueue({ kind: 'setMarshal', enabled: marshalBox.checked });
+  });
 
   let selected = -1;
   select.addEventListener('change', () => {
@@ -141,15 +147,19 @@ export function createArmyPanel(
         state.armies
           .map(
             (a) =>
-              `${a.id}:${a.phase}:${totalUnits(a.units)}:${a.stance}:${hooks?.explore.has(a.id) ? 1 : 0}`,
+              `${a.id}:${a.phase}:${totalUnits(a.units)}:${a.stance}:${hooks?.explore.has(a.id) ? 1 : 0}:${a.marshal ? 1 : 0}`,
           )
           .join(','),
         state.realms[0].atWarWith.join(','),
         ownSig,
         JSON.stringify(s.rally ?? null),
+        state.realms[0].marshal ? 'M' : '',
+        state.camps.map((c) => (c.cleared ? '' : totalUnits(c.defenders))).join(','),
       ].join('|');
       if (sig === lastSig) return;
       lastSig = sig;
+
+      if (marshalBox.checked !== state.realms[0].marshal) marshalBox.checked = state.realms[0].marshal;
 
       queueEl.textContent = s.trainQueue.length
         ? `training: ${s.trainQueue.map((q) => `${q.remaining}× ${UNITS[q.unit]?.name ?? q.unit}`).join(', ')}`
@@ -201,7 +211,8 @@ export function createArmyPanel(
         const row = document.createElement('div');
         row.className = 'ap-army';
         const label = document.createElement('span');
-        label.textContent = `⚔ Army ${a.id} · ${totalUnits(a.units)} troops · ${a.phase}`;
+        // marshal armies wear the badge and show strength against their muster (M14b)
+        label.textContent = `${a.marshal ? '⚜' : '⚔'} Army ${a.id} · ${totalUnits(a.units)}/${a.muster} troops · ${a.phase}`;
         row.appendChild(label);
         // stance (M13b): how the army occupies itself when idle
         const stanceSel = document.createElement('select');
@@ -217,7 +228,8 @@ export function createArmyPanel(
           enqueue({ kind: 'setStance', army: a.id, stance: stanceSel.value as ArmyStance }),
         );
         row.appendChild(stanceSel);
-        if (hooks) {
+        if (hooks && !a.marshal) {
+          // marshal armies get no Explore toggle — the autopilot stations them
           const exploreBtn = document.createElement('button');
           const on = hooks.explore.has(a.id);
           exploreBtn.textContent = on ? '⌖ Exploring…' : '⌖ Explore';
@@ -228,11 +240,15 @@ export function createArmyPanel(
         }
         if (a.phase === 'idle') {
           const targetSel = document.createElement('select');
+          // the marshal's own arithmetic doubles as advice: ✓ = this army wins
+          const myPower = power(state, 0, a.units);
+          const hasRam = (a.units.ram ?? 0) > 0;
           for (const camp of state.camps) {
             if (camp.cleared) continue;
+            const winnable = myPower >= MARSHAL_ATTACK_RATIO * campThreat(state, camp.id, hasRam);
             const opt = document.createElement('option');
             opt.value = `camp:${camp.id}`;
-            opt.textContent = `Camp ${camp.id + 1} (${totalUnits(camp.defenders)} bandits)`;
+            opt.textContent = `Camp ${camp.id + 1} (${totalUnits(camp.defenders)} bandits)${winnable ? ' ✓' : ''}`;
             targetSel.appendChild(opt);
           }
           // enemy settlements join the target list once the war is on
