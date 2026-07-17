@@ -39,6 +39,69 @@ export function villagerEconomy(state: GameState, realm: Realm, s: SimSettlement
 }
 
 /**
+ * One realm's building book: one building at a time, in priority order —
+ * farms lead (villagers can only work fields that exist), houses next because
+ * a realm that stops housing stops growing. Pure. The AI runs it realm-wide;
+ * the steward (M14) runs it per opted-in player town. The Wonder rush is
+ * AI-only: committing 2000 stone and the victory clock is a player decision.
+ */
+export function stewardBuildings(
+  state: GameState,
+  realm: Realm,
+  towns: SimSettlement[],
+  seat: SimSettlement,
+  day: number,
+): Command[] {
+  void state;
+  if (towns.some((s) => s.buildQueue.length > 0)) return [];
+  const count = (b: BuildingId) => towns.reduce((t, s) => t + (s.buildings[b] ?? 0), 0);
+  const wants: [BuildingId, number][] = [
+    ['farm', Math.max(1, Math.ceil(seat.jobTargets.farm / 5))],
+    ['house', 2 + Math.floor(day / 90)],
+    ['lumberCamp', 1],
+    ['barracks', 1],
+    ['storehouse', 1 + Math.floor(day / 300)],
+    ['market', 1],
+    ['quarry', 1],
+    ['palisade', 1],
+  ];
+  // the endgame: a rich Golden-age AI realm races for the Wonder
+  if (!realm.isPlayer && realm.age === 'golden' && count('wonder') === 0 && realm.stock.stone >= 2000) {
+    wants.unshift(['wonder', 1]);
+  }
+  for (const [b, want] of wants) {
+    if (count(b) < want) return [{ kind: 'queueBuilding', settlement: seat.id, building: b }];
+  }
+  return [];
+}
+
+/**
+ * One realm's research book: the cheapest available tech, else the age
+ * advance. Pure. Shared by the AI and the steward (M14).
+ */
+export function stewardResearch(state: GameState, realm: Realm, towns: SimSettlement[]): Command | null {
+  void state;
+  if (realm.research) return null;
+  const affordable = (Object.keys(TECHS) as TechId[])
+    .map((t) => TECHS[t])
+    .filter(
+      (t) =>
+        !realm.researchedTechs.includes(t.id) &&
+        (!t.culture || t.culture === realm.culture) &&
+        AGES[t.age].index <= AGES[realm.age].index &&
+        t.prereqs.every((p) => realm.researchedTechs.includes(p)) &&
+        towns.some((s) => (s.buildings[t.researchedAt] ?? 0) > 0),
+    )
+    .sort((a, b) => {
+      const cost = (c: typeof a.cost) => Object.values(c).reduce((x, y) => (x ?? 0) + (y ?? 0), 0) ?? 0;
+      return cost(a.cost) - cost(b.cost) || a.id.localeCompare(b.id);
+    });
+  if (affordable.length > 0) return { kind: 'setResearch', tech: affordable[0].id };
+  if (nextAge(realm.age)) return { kind: 'advanceAge' };
+  return null;
+}
+
+/**
  * The rival realms' brain. Runs on the daily boundary and emits ordinary
  * IssuedCommands — the AI plays by exactly the player's rules, which is what
  * keeps the sim deterministic and replayable. Personality (aggression) is a
@@ -56,7 +119,6 @@ export function aiSystem(state: GameState): IssuedCommand[] {
     if (mine.length === 0) continue;
     const seat = mine.reduce((a, b) => (a.pop > b.pop ? a : b));
     const count = (b: BuildingId) => mine.reduce((t, s) => t + (s.buildings[b] ?? 0), 0);
-    const queued = mine.some((s) => s.buildQueue.length > 0);
     const aggression = 0.6 + (0.4 * ((realm.id * 7919) % 10)) / 10;
     const day = dateOf(state.tick).day;
 
@@ -65,51 +127,10 @@ export function aiSystem(state: GameState): IssuedCommand[] {
       for (const cmd of villagerEconomy(state, realm, s, day)) issue(cmd);
     }
 
-    // --- economy: one building at a time, in priority order ---
-    // farms lead: villagers can only work fields that exist (M12); houses next
-    // because a realm that stops housing stops growing
-    if (!queued) {
-      const wants: [BuildingId, number][] = [
-        ['farm', Math.max(1, Math.ceil(seat.jobTargets.farm / 5))],
-        ['house', 2 + Math.floor(day / 90)],
-        ['lumberCamp', 1],
-        ['barracks', 1],
-        ['storehouse', 1 + Math.floor(day / 300)],
-        ['market', 1],
-        ['quarry', 1],
-        ['palisade', 1],
-      ];
-      // the endgame: a rich Golden-age realm races for the Wonder
-      if (realm.age === 'golden' && count('wonder') === 0 && realm.stock.stone >= 2000) {
-        wants.unshift(['wonder', 1]);
-      }
-      for (const [b, want] of wants) {
-        if (count(b) < want) {
-          issue({ kind: 'queueBuilding', settlement: seat.id, building: b });
-          break;
-        }
-      }
-    }
-
-    // --- research: cheapest available tech, else advance the age ---
-    if (!realm.research) {
-      const affordable = (Object.keys(TECHS) as TechId[])
-        .map((t) => TECHS[t])
-        .filter(
-          (t) =>
-            !realm.researchedTechs.includes(t.id) &&
-            (!t.culture || t.culture === realm.culture) &&
-            AGES[t.age].index <= AGES[realm.age].index &&
-            t.prereqs.every((p) => realm.researchedTechs.includes(p)) &&
-            mine.some((s) => (s.buildings[t.researchedAt] ?? 0) > 0),
-        )
-        .sort((a, b) => {
-          const cost = (c: typeof a.cost) => Object.values(c).reduce((x, y) => (x ?? 0) + (y ?? 0), 0) ?? 0;
-          return cost(a.cost) - cost(b.cost) || a.id.localeCompare(b.id);
-        });
-      if (affordable.length > 0) issue({ kind: 'setResearch', tech: affordable[0].id });
-      else if (nextAge(realm.age)) issue({ kind: 'advanceAge' });
-    }
+    // --- economy + research: the shared books (factored for M14's steward) ---
+    for (const cmd of stewardBuildings(state, realm, mine, seat, day)) issue(cmd);
+    const research = stewardResearch(state, realm, mine);
+    if (research) issue(research);
 
     // --- military: keep a growing garrison at the seat ---
     const garrisonTarget = Math.floor((15 + day / 24) * aggression);

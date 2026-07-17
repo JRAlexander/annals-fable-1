@@ -10,6 +10,7 @@ import { GRID, WORLD_SIZE } from '../worldgen/types';
 import type { SimEvent } from './events';
 import {
   ARMY_STANCES,
+  type Army,
   type ArmyStance,
   type GameState,
   type RallyTarget,
@@ -51,7 +52,7 @@ export type Command =
   | { kind: 'setResearch'; tech: TechId }
   | { kind: 'advanceAge' }
   | { kind: 'trainUnits'; settlement: number; unit: UnitId; count: number }
-  | { kind: 'formArmy'; settlement: number; units: Partial<Record<UnitId, number>> }
+  | { kind: 'formArmy'; settlement: number; units: Partial<Record<UnitId, number>>; marshal?: true }
   | { kind: 'declareWar'; target: RealmId } // M5
   | { kind: 'orderArmy'; army: number; objective: Objective }
   // RTS mode (M7+), same envelope, typed now:
@@ -61,7 +62,10 @@ export type Command =
   // Unit autonomy (M13) — appended kinds, so v3 command logs replay unchanged:
   | { kind: 'setStance'; army: number; stance: ArmyStance }
   | { kind: 'setRally'; settlement: number; rally: RallyTarget | null }
-  | { kind: 'setGovernor'; settlement: number; enabled: boolean };
+  | { kind: 'setGovernor'; settlement: number; enabled: boolean }
+  // Full autopilot (M14) — appended kinds, same replay guarantee:
+  | { kind: 'setSteward'; settlement: number; enabled: boolean }
+  | { kind: 'setMarshal'; enabled: boolean };
 
 export interface IssuedCommand {
   /** Tick it executes on (stamped at enqueue time). */
@@ -442,7 +446,7 @@ export function applyCommands(state: GameState, issued: IssuedCommand[], out: Si
           units[id] = n;
           strength += n;
         }
-        const formed = {
+        const formed: Army = {
           id: state.nextArmyId,
           ownerRealm: realm,
           home: s.id,
@@ -457,8 +461,10 @@ export function applyCommands(state: GameState, issued: IssuedCommand[], out: Si
           objective: null,
           phase: 'idle' as const,
           stance: 'defensive' as const,
+          muster: strength,
           battleStartStrength: 0,
         };
+        if (cmd.marshal === true) formed.marshal = true; // the marshal's own banner (M14)
         state.armies.push(formed);
         spawnArmyUnits(state, formed, units); // the soldiers take the field (M8a)
         out.push({ kind: 'armyFormed', army: state.nextArmyId, settlement: s.id, strength });
@@ -760,6 +766,28 @@ export function applyCommands(state: GameState, issued: IssuedCommand[], out: Si
           break;
         }
         s.governor = cmd.enabled === true;
+        break;
+      }
+      case 'setSteward': {
+        const s = state.settlements[cmd.settlement];
+        if (!s) {
+          reject(out, realm, `no such settlement ${cmd.settlement}`);
+          break;
+        }
+        if (s.ownerRealm !== realm) {
+          reject(out, realm, `settlement ${cmd.settlement} not owned by realm ${realm}`);
+          break;
+        }
+        s.steward = cmd.enabled === true;
+        break;
+      }
+      case 'setMarshal': {
+        const r = state.realms[realm];
+        if (!r) {
+          reject(out, realm, 'no such realm');
+          break;
+        }
+        r.marshal = cmd.enabled === true;
         break;
       }
       // every command kind is now live — the M1 envelope is fully realized

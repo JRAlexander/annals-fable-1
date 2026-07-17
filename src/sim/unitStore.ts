@@ -1,5 +1,6 @@
 import type { UnitId } from '../content/schema';
 import { UNITS } from '../content/units';
+import { totalUnits } from './combat';
 import { resolveStat } from './modifiers';
 import type { Army, FieldUnit, GameState, UnitCounts } from './state';
 
@@ -182,6 +183,7 @@ export function splitUnits(state: GameState, ids: ReadonlySet<number>, home: num
     objective: null,
     phase: 'idle',
     stance: 'defensive',
+    muster: chosen.length,
     battleStartStrength: 0,
   };
   state.armies.push(army);
@@ -218,6 +220,7 @@ export function musterDefenders(
     objective: null,
     phase: 'idle', // the engagement pass locks the pair on the next tick
     stance: 'standGround', // defenders never wander off their walls
+    muster: totalUnits(counts),
     battleStartStrength: 0,
     defending,
   };

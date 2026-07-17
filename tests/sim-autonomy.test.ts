@@ -55,6 +55,7 @@ function conjureWildArmy(sim: SimRun, units: Record<string, number>, x: number, 
     objective: null,
     phase: 'idle',
     stance: 'standGround',
+    muster: 0,
     battleStartStrength: 0,
   };
   sim.state.armies.push(army);
@@ -334,6 +335,7 @@ describe('unit autonomy (M13): capture', () => {
     // the old regime's standing orders, planted directly for the test
     enemy.rally = { kind: 'point', i: 1, j: 1 };
     enemy.governor = true;
+    enemy.steward = true;
     const me = conjureArmy(sim, { swordsman: 60, spearman: 30, archer: 20 });
     issueNow(sim, {
       kind: 'orderArmy',
@@ -343,5 +345,6 @@ describe('unit autonomy (M13): capture', () => {
     runUntil(sim, () => enemy.ownerRealm === 0, 30000, 'settlement captured');
     expect('rally' in enemy).toBe(false);
     expect(enemy.governor).toBe(false);
+    expect(enemy.steward).toBe(false); // the M14 steward falls with the town too
   });
 });

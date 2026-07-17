@@ -82,6 +82,7 @@ describe('bench', () => {
         objective: null,
         phase: 'fighting',
         stance: 'standGround',
+        muster: totalUnits(counts),
         battleStartStrength: totalUnits(counts),
         engagedWith: -1,
       };

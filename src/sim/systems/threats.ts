@@ -1,4 +1,5 @@
 import { RAID_PERIOD, RAID_SIZE_MULT, RAID_STAGGER, RAID_START_DAY, WILD_REALM } from '../../content/threats';
+import { totalUnits } from '../combat';
 import type { SimEvent } from '../events';
 import { findPath, pathReaches } from '../pathfind';
 import type { Army, GameState, UnitCounts } from '../state';
@@ -47,6 +48,7 @@ function spawnWildArmy(
     objective: { kind: 'attackSettlement', settlement: target },
     phase: 'marching',
     stance: 'standGround', // the wilds keep their own counsel — no autonomy layer
+    muster: totalUnits(units),
     battleStartStrength: 0,
   };
   state.armies.push(army);

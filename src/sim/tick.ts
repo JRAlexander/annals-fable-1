@@ -7,8 +7,10 @@ import { aiSystem } from './systems/ai';
 import { armiesSystem } from './systems/armies';
 import { constructionSystem } from './systems/construction';
 import { governorSystem } from './systems/governor';
+import { marshalSystem } from './systems/marshal';
 import { populationSystem } from './systems/population';
 import { researchSystem } from './systems/research';
+import { stewardSystem } from './systems/steward';
 import { storageSystem } from './systems/storage';
 import { threatsSystem } from './systems/threats';
 import { trainingSystem } from './systems/training';
@@ -28,9 +30,15 @@ export function advanceTick(state: GameState, issued: IssuedCommand[], streams: 
   const events: SimEvent[] = [];
   if (state.tick === 0) events.push({ kind: 'realmFounded', realm: 0, tick: 0 });
 
-  // rival realms — and the player's governors (M13) — think on the daily
-  // boundary and speak the same command language, unrecorded
-  const auto = [...aiSystem(state), ...governorSystem(state)];
+  // rival realms — and the player's governors (M13), stewards, and marshal
+  // (M14) — think on the daily boundary and speak the same command language,
+  // unrecorded; seq bands keep the order player → governor → steward → marshal
+  const auto = [
+    ...aiSystem(state),
+    ...governorSystem(state),
+    ...stewardSystem(state),
+    ...marshalSystem(state),
+  ];
   applyCommands(state, auto.length ? [...issued, ...auto] : issued, events);
   threatsSystem(state, events); // the wilds move before the day's marching
   constructionSystem(state, events);
