@@ -63,6 +63,34 @@ export function createToasts(
           show(`The realm enters ${AGES[e.age].name}!`, 'good');
         }
 
+        // --- diplomacy (M15b): treaties, declarations, and pacts ---
+        if (e.kind === 'peaceMade' && (e.realm === 0 || e.target === 0)) {
+          const other = state.realms[e.realm === 0 ? e.target : e.realm];
+          const gained = e.realm === 0 ? e.demanded : e.gave; // what flows TO the player
+          const gainedText = Object.entries(gained)
+            .map(([res, amt]) => `${amt} ${res}`)
+            .join(', ');
+          show(
+            `🤝 Peace with ${other.name}${gainedText ? ` — they pay tribute: ${gainedText}` : ''}`,
+            'good',
+          );
+        }
+        if (e.kind === 'warDeclared' && e.target === 0) {
+          const seat = siteOf(state.realms[e.realm].capital);
+          alert(`war:${e.realm}`, `⚔ ${state.realms[e.realm].name} declares war on you!`, seat.x, seat.z);
+        }
+        if (e.kind === 'coalitionFormed' && e.against === 0) {
+          for (const member of e.members) {
+            const seat = siteOf(state.realms[member].capital);
+            alert(
+              `pact:${member}`,
+              `⚔ ${state.realms[member].name} joins a pact against you!`,
+              seat.x,
+              seat.z,
+            );
+          }
+        }
+
         // --- the war drums (M11): clickable, camera-jumping alerts ---
         if (e.kind === 'raidSpawned' && mineSettlement(e.settlement)) {
           const s = siteOf(e.settlement);

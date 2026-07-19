@@ -168,6 +168,33 @@ and the realm does the rest:
   is in reach. Bring the counter units all the same; kiters are slower
   backing up than their hunters are closing in.
 
+## Diplomacy (wars end now)
+
+The Diplomacy list (bottom of the War ministry) runs the realm's statecraft:
+
+- **Sue for peace**: while at war, pick your terms — 🕊 **White peace**,
+  🎁 **Offer tribute** (a quarter of your stock), or 💰 **Demand tribute**
+  (a quarter of theirs) — and the button tells you up front whether **they
+  will accept or refuse**, judged by the same arithmetic the rival itself
+  uses: *the beaten accept anything reasonable, equals take white peace, and
+  the strong want paying*. A realm whose armies have collapsed will concede
+  up to a quarter of its treasury.
+- **Peace ends the fighting everywhere, at once**: battles break off, sieges
+  and pursuits turn for home, defenders stand down. (Bandits sign nothing —
+  the wilds fight on.)
+- **The truce**: every peace holds for **120 days** — shown as 🤝 with a
+  countdown — and neither side can declare again until it lifts. Mind your
+  storehouses: a full treasury wastes incoming tribute.
+- **The AI sues too**: a rival losing its war will offer you a quarter of its
+  stock for peace — it lands automatically (you never pay a demand you didn't
+  choose), with a toast and a chronicle line. But **never while your armies
+  are at their gates** — a conqueror mid-campaign cannot be bought off; if
+  you want their gold instead of their towns, call your armies home first.
+- **Coalitions**: hold a strict **majority of the world's towns** — you or
+  anyone else — and the other realms take counsel: they declare war on the
+  leader together and settle their own quarrels. The world holds a grudge
+  against the mighty; expect the pact when your borders swell.
+
 | Key | Action |
 |---|---|
 | `Space` | pause / resume |
