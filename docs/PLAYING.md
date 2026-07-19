@@ -193,7 +193,9 @@ The Diplomacy list (bottom of the War ministry) runs the realm's statecraft:
 - **Coalitions**: hold a strict **majority of the world's towns** — you or
   anyone else — and the other realms take counsel: they declare war on the
   leader together and settle their own quarrels. The world holds a grudge
-  against the mighty; expect the pact when your borders swell.
+  against the mighty; expect the pact when your borders swell. But grievance
+  needs time to gather: **no pact forms before day 90**, so a strong start
+  isn't punished with a war on day one.
 
 | Key | Action |
 |---|---|
@@ -204,6 +206,33 @@ The Diplomacy list (bottom of the War ministry) runs the realm's statecraft:
 | `Ctrl+1`–`9` | assign selected armies to a group |
 | `T` | tech tree |
 | `Esc` | cancel placement or rally-flag pick / clear selection |
+
+## Espionage (the quiet service)
+
+Every rival's row in the Diplomacy list carries a spy line — four missions,
+paid in gold, in war or in peace (spying breaks no truce):
+
+| Mission | Cost | What your agent does |
+|---|---|---|
+| 🗺 **Scout** | 75 gold | Maps the country around their **capital** — the fog there turns to explored ground |
+| 📜 **Intel** | 100 gold | Smuggles out a ledger: their gold, war strength vs yours, wars, and whether **a Wonder rises** — shown under their row |
+| 🔥 **Sabotage** | 250 gold | Sets their most precious construction back **60 ticks** — a rising Wonder is always the first target |
+| 💰 **Steal** | 200 gold | Lifts **15%** of their treasury into yours |
+
+The tradecraft:
+
+- **Travel**: an agent needs **3 days** on the road before the mission
+  resolves — the toast tells you when they're dispatched, and again when word
+  comes back.
+- **Cooldown**: after any mission against a realm, your agents **lie low for
+  20 days** before another can be sent there (other rivals remain fair game).
+- **Counter-espionage**: the spy line shows your odds. The base is **75%**,
+  and every **Keep** the target holds cuts it by **20 points** (never below
+  15%). A caught agent is simply lost — the fee is sunk, the chronicle names
+  the shame, and the target's court reads about it too. Build Keeps at home:
+  **the AI runs saboteurs against rising Wonders**, including yours.
+- **The ledger fades**: intel is a snapshot, kept until you reload the game —
+  the chronicle keeps the prose record for posterity.
 
 ## Your first hour, step by step
 

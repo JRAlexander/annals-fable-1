@@ -6,6 +6,8 @@ import {
   isExploredAt,
   isVisibleAt,
   packExplored,
+  revealExplored,
+  SETTLEMENT_SIGHT_CELLS,
   unpackExplored,
 } from '../src/app/visibility';
 import { hidx } from '../src/worldgen/coords';
@@ -74,5 +76,39 @@ describe('fog of war visibility (M7b)', () => {
     const vis = computeVisibility(sim.state);
     accumulate(fog, vis);
     expect(accumulate(fog, vis)).toBe(false);
+  });
+
+  describe('revealExplored — the spy-scout stamper (M16b)', () => {
+    it('marks the disc Explored, never Visible, and reports the change', () => {
+      const fog = new Uint8Array(GRID * GRID);
+      const ci = 100;
+      const cj = 100;
+      expect(revealExplored(fog, ci, cj, SETTLEMENT_SIGHT_CELLS)).toBe(true);
+      expect(fog[hidx(ci, cj)]).toBe(Fog.Explored);
+      expect(fog[hidx(ci + SETTLEMENT_SIGHT_CELLS, cj)]).toBe(Fog.Explored);
+      // just outside the disc stays dark; nothing anywhere is faked Visible
+      expect(fog[hidx(ci + SETTLEMENT_SIGHT_CELLS + 1, cj)]).toBe(Fog.Unexplored);
+      expect(fog.includes(Fog.Visible)).toBe(false);
+    });
+
+    it('never demotes Visible or re-writes Explored; a repeat call is a no-op', () => {
+      const fog = new Uint8Array(GRID * GRID);
+      fog[hidx(50, 50)] = Fog.Visible;
+      fog[hidx(51, 50)] = Fog.Explored;
+      expect(revealExplored(fog, 50, 50, 3)).toBe(true); // the rest of the disc was dark
+      expect(fog[hidx(50, 50)]).toBe(Fog.Visible);
+      expect(fog[hidx(51, 50)]).toBe(Fog.Explored);
+      expect(revealExplored(fog, 50, 50, 3)).toBe(false);
+    });
+
+    it('clamps at the map edge and survives the save roundtrip', () => {
+      const fog = new Uint8Array(GRID * GRID);
+      expect(revealExplored(fog, 0, 0, 5)).toBe(true); // no out-of-bounds writes
+      expect(revealExplored(fog, GRID - 1, GRID - 1, 5)).toBe(true);
+      const restored = unpackExplored(packExplored(fog));
+      for (let k = 0; k < fog.length; k++) {
+        expect(restored[k] >= Fog.Explored).toBe(fog[k] >= Fog.Explored);
+      }
+    });
   });
 });
