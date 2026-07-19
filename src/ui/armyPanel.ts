@@ -1,13 +1,26 @@
 import { BUILDINGS } from '../content/buildings';
 import { CULTURES } from '../content/cultures';
+import { TRIBUTE_FRACTION } from '../content/diplomacy';
 import { MARSHAL_ATTACK_RATIO } from '../content/rts';
-import type { UnitId } from '../content/schema';
+import type { Cost, ResourceId, UnitId } from '../content/schema';
 import { UNITS } from '../content/units';
 import { campThreat, power, totalUnits } from '../sim/combat';
 import type { Command } from '../sim/commands';
-import type { ArmyStance, GameState } from '../sim/state';
+import { acceptsPeace, type Tribute } from '../sim/diplomacy';
+import type { ArmyStance, GameState, Realm } from '../sim/state';
+import { TICKS_PER_DAY } from '../sim/time';
 
 const TRAIN_BATCH = 5;
+
+/** A quarter of a treasury, floored, zeros omitted — the UI's tribute preset. */
+function quarterOf(stock: Realm['stock']): Cost {
+  const cost: Cost = {};
+  for (const [res, amt] of Object.entries(stock) as [ResourceId, number][]) {
+    const share = Math.floor((amt ?? 0) * TRIBUTE_FRACTION);
+    if (share > 0) cost[res] = share;
+  }
+  return cost;
+}
 
 const STANCE_LABEL: Record<ArmyStance, string> = {
   defensive: '🛡 Defensive',
@@ -155,6 +168,10 @@ export function createArmyPanel(
         JSON.stringify(s.rally ?? null),
         state.realms[0].marshal ? 'M' : '',
         state.camps.map((c) => (c.cleared ? '' : totalUnits(c.defenders))).join(','),
+        // diplomacy (M15b): every realm's wars + truces, and the day itself —
+        // truce countdowns must repaint as the seasons pass
+        state.realms.map((r) => `${r.id}:${r.atWarWith.join('.')}:${JSON.stringify(r.truceUntil)}`).join(';'),
+        Math.floor(state.tick / TICKS_PER_DAY),
       ].join('|');
       if (sig === lastSig) return;
       lastSig = sig;
@@ -285,15 +302,55 @@ export function createArmyPanel(
       }
 
       diplomacyEl.innerHTML = '';
+      const today = Math.floor(state.tick / TICKS_PER_DAY);
       for (const realm of state.realms) {
         if (realm.isPlayer) continue;
         const row = document.createElement('div');
         row.className = 'ap-army';
         const label = document.createElement('span');
         const atWar = state.realms[0].atWarWith.includes(realm.id);
-        label.textContent = `${atWar ? '🔥' : '🕊'} ${realm.name} (${CULTURES[realm.culture ?? '']?.name ?? realm.culture}) — ${atWar ? 'at war' : 'at peace'}`;
+        const truceLeft = (state.realms[0].truceUntil[realm.id] ?? 0) - today;
+        const standing = atWar ? 'at war' : truceLeft > 0 ? `truce, ${truceLeft} days` : 'at peace';
+        label.textContent = `${atWar ? '🔥' : truceLeft > 0 ? '🤝' : '🕊'} ${realm.name} (${CULTURES[realm.culture ?? '']?.name ?? realm.culture}) — ${standing}`;
         row.appendChild(label);
-        if (!atWar) {
+        if (atWar) {
+          // sue for peace (M15b): three presets, judged live by the same
+          // arithmetic the realm itself will use
+          const termsSel = document.createElement('select');
+          for (const [value, text] of [
+            ['white', '🕊 White peace'],
+            ['offer', `🎁 Offer tribute (${Math.round(TRIBUTE_FRACTION * 100)}% of your stock)`],
+            ['demand', `💰 Demand tribute (${Math.round(TRIBUTE_FRACTION * 100)}% of theirs)`],
+          ]) {
+            const opt = document.createElement('option');
+            opt.value = value;
+            opt.textContent = text;
+            termsSel.appendChild(opt);
+          }
+          const sue = document.createElement('button');
+          const termsOf = (): Tribute =>
+            termsSel.value === 'offer'
+              ? { give: quarterOf(state.realms[0].stock) }
+              : termsSel.value === 'demand'
+                ? { demand: quarterOf(realm.stock) }
+                : {};
+          const refreshHint = () => {
+            const willAccept = acceptsPeace(state, realm, state.realms[0], termsOf());
+            sue.textContent = `Sue for peace ${willAccept ? '✓ they will accept' : '✗ they will refuse'}`;
+          };
+          refreshHint();
+          termsSel.addEventListener('change', refreshHint);
+          sue.addEventListener('click', () =>
+            enqueue({ kind: 'offerPeace', target: realm.id, tribute: termsOf() }),
+          );
+          row.append(termsSel, sue);
+        } else if (truceLeft > 0) {
+          const declare = document.createElement('button');
+          declare.textContent = 'Declare war';
+          declare.disabled = true;
+          declare.title = `the truce holds for ${truceLeft} more days`;
+          row.appendChild(declare);
+        } else {
           const declare = document.createElement('button');
           declare.textContent = 'Declare war';
           declare.addEventListener('click', () => enqueue({ kind: 'declareWar', target: realm.id }));
