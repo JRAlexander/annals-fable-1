@@ -1,5 +1,6 @@
 import { AGES, ageIndex, nextAge } from '../content/ages';
 import { BUILDINGS } from '../content/buildings';
+import { TRUCE_DAYS } from '../content/diplomacy';
 import { VILLAGER_COST, VILLAGER_JOBS, type VillagerJob } from '../content/economy';
 import type { BuildingId, Cost, ResourceId, TechId, UnitId } from '../content/schema';
 import { TECHS } from '../content/techs';
@@ -7,6 +8,7 @@ import { WILD_REALM } from '../content/threats';
 import { UNITS } from '../content/units';
 import { hidx, worldToCell } from '../worldgen/coords';
 import { GRID, WORLD_SIZE } from '../worldgen/types';
+import { acceptsPeace, runawayLeader, type Tribute, tributeValue } from './diplomacy';
 import type { SimEvent } from './events';
 import {
   ARMY_STANCES,
@@ -17,7 +19,8 @@ import {
   type Realm,
   type RealmId,
 } from './state';
-import { routePath } from './systems/armies';
+import { goHomeward, routePath, standDown } from './systems/armies';
+import { dateOf } from './time';
 import { spawnArmyUnits, splitUnits } from './unitStore';
 
 /** Nearest navgrid cell to a world position, as routePath arguments. */
@@ -65,7 +68,9 @@ export type Command =
   | { kind: 'setGovernor'; settlement: number; enabled: boolean }
   // Full autopilot (M14) — appended kinds, same replay guarantee:
   | { kind: 'setSteward'; settlement: number; enabled: boolean }
-  | { kind: 'setMarshal'; enabled: boolean };
+  | { kind: 'setMarshal'; enabled: boolean }
+  // Diplomacy (M15):
+  | { kind: 'offerPeace'; target: RealmId; tribute: Tribute };
 
 export interface IssuedCommand {
   /** Tick it executes on (stamped at enqueue time). */
@@ -147,6 +152,80 @@ function buildingGates(
     return false;
   }
   return true;
+}
+
+/**
+ * Peace is sworn (M15): the war ends, a truce is stamped, tribute changes
+ * hands, and every army caught mid-campaign against the other realm stands
+ * down — nothing in the per-tick systems re-checks war state, so the treaty
+ * must clean up after itself. Runs before armiesSystem within the tick, and
+ * detectEngagements re-checks hostility, so no freshly-peaced pair re-locks.
+ */
+function makePeace(state: GameState, a: Realm, b: Realm, tribute: Tribute, out: SimEvent[]): void {
+  const day = dateOf(state.tick).day;
+  a.atWarWith = a.atWarWith.filter((id) => id !== b.id);
+  b.atWarWith = b.atWarWith.filter((id) => id !== a.id);
+  a.truceUntil[b.id] = day + TRUCE_DAYS;
+  b.truceUntil[a.id] = day + TRUCE_DAYS;
+
+  // tribute both ways; the storage clamp clips overflow next pass — a full
+  // treasury wastes tribute, exactly as it wastes camp loot
+  const transfer = (from: Realm, to: Realm, cost?: Cost) => {
+    if (!cost) return;
+    pay(from, cost);
+    for (const [res, amt] of Object.entries(cost) as [ResourceId, number][]) {
+      to.stock[res] += amt ?? 0;
+    }
+  };
+  transfer(a, b, tribute.give);
+  transfer(b, a, tribute.demand);
+
+  // the armies stand down: engaged pairs break, sieges and pursuits turn home
+  const pairIds = new Set([a.id, b.id]);
+  for (const army of [...state.armies]) {
+    if (!pairIds.has(army.ownerRealm)) continue;
+    if (!state.armies.includes(army)) continue; // dissolved earlier this pass
+    const otherId = army.ownerRealm === a.id ? b.id : a.id;
+    if (army.engagedWith !== undefined) {
+      const foe = state.armies.find((x) => x.id === army.engagedWith);
+      if (foe && foe.ownerRealm === otherId) {
+        standDown(state, foe);
+        standDown(state, army);
+        continue;
+      }
+    }
+    if (army.defending) continue; // the defender sweep below decides
+    const o = army.objective;
+    if (o?.kind === 'attackSettlement' && state.settlements[o.settlement]?.ownerRealm === otherId) {
+      goHomeward(state, army);
+    } else if (o?.kind === 'attackArmy') {
+      const quarry = state.armies.find((x) => x.id === o.army);
+      if (quarry && quarry.ownerRealm === otherId) goHomeward(state, army);
+    }
+  }
+  // just-mustered defenders whose siege has lifted (their besieger turned
+  // home above) dissolve back behind their walls; any REMAINING threat —
+  // wilds, a third realm still at war — keeps them standing
+  for (const army of [...state.armies]) {
+    if (!pairIds.has(army.ownerRealm)) continue;
+    if (army.defending?.settlement === undefined || army.engagedWith !== undefined) continue;
+    const post = army.defending.settlement;
+    const stillThreatened = state.armies.some(
+      (x) =>
+        x.ownerRealm !== army.ownerRealm &&
+        x.objective?.kind === 'attackSettlement' &&
+        x.objective.settlement === post,
+    );
+    if (!stillThreatened) standDown(state, army);
+  }
+
+  out.push({
+    kind: 'peaceMade',
+    realm: a.id,
+    target: b.id,
+    gave: tribute.give ?? {},
+    demanded: tribute.demand ?? {},
+  });
 }
 
 /** Validate and apply this tick's commands. Invalid commands leave state untouched. */
@@ -605,9 +684,51 @@ export function applyCommands(state: GameState, issued: IssuedCommand[], out: Si
           reject(out, realm, `already at war with ${target.name}`);
           break;
         }
+        {
+          const day = dateOf(state.tick).day;
+          const truce = r.truceUntil[cmd.target] ?? 0;
+          if (day < truce) {
+            reject(out, realm, `the truce with ${target.name} holds for ${truce - day} more days`);
+            break;
+          }
+        }
         r.atWarWith.push(cmd.target);
         target.atWarWith.push(realm);
         out.push({ kind: 'warDeclared', realm, target: cmd.target });
+        // an AI declaring on the runaway leader is the pact taking shape (M15)
+        if (!r.isPlayer && runawayLeader(state) === cmd.target) {
+          out.push({ kind: 'coalitionFormed', against: cmd.target, members: [realm] });
+        }
+        break;
+      }
+      case 'offerPeace': {
+        const offerer = state.realms[realm];
+        const target = state.realms[cmd.target];
+        if (!target || cmd.target === realm) {
+          reject(out, realm, 'no such rival realm');
+          break;
+        }
+        if (!offerer.atWarWith.includes(cmd.target)) {
+          reject(out, realm, `there is no war with ${target.name} to end`);
+          break;
+        }
+        if (cmd.tribute.give && shortOf(offerer, cmd.tribute.give)) {
+          reject(out, realm, 'cannot afford the tribute offered');
+          break;
+        }
+        if (cmd.tribute.demand && shortOf(target, cmd.tribute.demand)) {
+          reject(out, realm, `${target.name} cannot pay such tribute`);
+          break;
+        }
+        // the player is never bound by a demand it did not choose to accept
+        const accepted = target.isPlayer
+          ? tributeValue(cmd.tribute.demand) === 0
+          : acceptsPeace(state, target, offerer, cmd.tribute);
+        if (!accepted) {
+          reject(out, realm, `${target.name} refuses our terms`);
+          break;
+        }
+        makePeace(state, offerer, target, cmd.tribute, out);
         break;
       }
       case 'moveUnits':

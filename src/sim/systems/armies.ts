@@ -17,7 +17,7 @@ import { resolveStat } from '../modifiers';
 import { findPath } from '../pathfind';
 import type { Army, GameState, SimSettlement } from '../state';
 import { dateOf } from '../time';
-import { musterDefenders, reconcileUnits, steerUnits } from '../unitStore';
+import { musterDefenders, reconcileUnits, removeArmyUnits, steerUnits } from '../unitStore';
 import { dragonTarget } from './threats';
 import { type FortState, fightUnits } from './unitCombat';
 import { killVillagers } from './villagers';
@@ -143,6 +143,42 @@ function detectEngagements(state: GameState, out: SimEvent[]): void {
   }
 }
 
+/** Return a defender army's soldiers to their camp or town garrison. */
+function dissolveDefenders(state: GameState, army: Army): void {
+  if (army.defending?.camp !== undefined) {
+    const camp = state.camps[army.defending.camp];
+    if (camp && !camp.cleared) {
+      for (const [t, n] of Object.entries(army.units)) {
+        camp.defenders[t] = (camp.defenders[t] ?? 0) + (n ?? 0);
+      }
+    }
+  } else if (army.defending?.settlement !== undefined) {
+    const s = state.settlements[army.defending.settlement];
+    if (s) {
+      for (const [t, n] of Object.entries(army.units)) {
+        s.garrison[t] = (s.garrison[t] ?? 0) + (n ?? 0);
+      }
+    }
+  }
+}
+
+/**
+ * Break an army off from whatever it is doing (M15 peace). Defenders dissolve
+ * home ON THE SPOT — including removal from the army list and the unit store,
+ * because this can run outside the armies tick (in applyCommands), where no
+ * survivor pass will collect them. Field armies simply march home.
+ */
+export function standDown(state: GameState, army: Army): void {
+  army.engagedWith = undefined;
+  if (army.defending) {
+    dissolveDefenders(state, army);
+    state.armies = state.armies.filter((a) => a.id !== army.id);
+    removeArmyUnits(state, army.id);
+    return;
+  }
+  goHomeward(state, army);
+}
+
 /**
  * After a battle: defenders go back behind their walls (the army dissolves —
  * returns false), field armies pick their march back up (returns true).
@@ -150,21 +186,7 @@ function detectEngagements(state: GameState, out: SimEvent[]): void {
 function resumeAfterBattle(state: GameState, army: Army): boolean {
   army.engagedWith = undefined;
   if (army.defending) {
-    if (army.defending.camp !== undefined) {
-      const camp = state.camps[army.defending.camp];
-      if (camp && !camp.cleared) {
-        for (const [t, n] of Object.entries(army.units)) {
-          camp.defenders[t] = (camp.defenders[t] ?? 0) + (n ?? 0);
-        }
-      }
-    } else if (army.defending.settlement !== undefined) {
-      const s = state.settlements[army.defending.settlement];
-      if (s) {
-        for (const [t, n] of Object.entries(army.units)) {
-          s.garrison[t] = (s.garrison[t] ?? 0) + (n ?? 0);
-        }
-      }
-    }
+    dissolveDefenders(state, army);
     return false; // the defender army dissolves; its soldiers are home
   }
   const o = army.objective;
@@ -201,7 +223,7 @@ function resumeAfterBattle(state: GameState, army: Army): boolean {
 }
 
 /** Send an army home after its work is done. */
-function goHomeward(state: GameState, army: Army): void {
+export function goHomeward(state: GameState, army: Army): void {
   army.objective = { kind: 'returnHome' };
   army.phase = 'returning';
   const home = state.world.settlements[army.home];
