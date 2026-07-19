@@ -1,13 +1,16 @@
 import { BUILDINGS } from '../content/buildings';
 import { CULTURES } from '../content/cultures';
 import { TRIBUTE_FRACTION } from '../content/diplomacy';
+import { SPY_COST, SPY_MISSION_DAYS, type SpyMissionKind } from '../content/espionage';
 import { MARSHAL_ATTACK_RATIO } from '../content/rts';
 import type { Cost, ResourceId, UnitId } from '../content/schema';
 import { UNITS } from '../content/units';
 import { campThreat, power, totalUnits } from '../sim/combat';
 import type { Command } from '../sim/commands';
-import { acceptsPeace, type Tribute } from '../sim/diplomacy';
+import { acceptsPeace, type Tribute, warPower } from '../sim/diplomacy';
+import type { SimEvent } from '../sim/events';
 import type { ArmyStance, GameState, Realm } from '../sim/state';
+import { successChance } from '../sim/systems/espionage';
 import { TICKS_PER_DAY } from '../sim/time';
 
 const TRAIN_BATCH = 5;
@@ -40,8 +43,20 @@ function costText(unit: UnitId): string {
     .join(', ');
 }
 
+const SPY_BUTTONS: [SpyMissionKind, string, string][] = [
+  ['scout', '🗺 Scout', 'Map the country around their capital'],
+  ['intel', '📜 Intel', 'A smuggled ledger: their gold, strength, and wars'],
+  ['sabotage', '🔥 Sabotage', 'Set back their most precious construction'],
+  ['steal', '💰 Steal', 'Lift a share of their treasury'],
+];
+
+/** A latest-intel ledger entry, kept by the panel from spyIntel events. */
+type IntelEntry = { intel: Extract<SimEvent, { kind: 'spyIntel' }>; day: number };
+
 export interface ArmyPanel {
   update(state: GameState): void;
+  /** Feed this tick's sim events; the panel keeps the latest intel per rival. */
+  pushEvents(events: SimEvent[], state: GameState): void;
 }
 
 /**
@@ -110,8 +125,21 @@ export function createArmyPanel(
 
   let lastOwnSig = '';
   let lastSig = '';
+  // espionage (M16b): the panel remembers the latest ledger per rival. An
+  // in-memory courtesy only — a reload forgets it; the chronicle keeps the
+  // prose record. intelVersion feeds sig so a fresh ledger repaints the panel.
+  const intelCache = new Map<number, IntelEntry>();
+  let intelVersion = 0;
 
   return {
+    pushEvents(events, state) {
+      for (const e of events) {
+        if (e.kind === 'spyIntel' && e.realm === 0) {
+          intelCache.set(e.target, { intel: e, day: Math.floor(state.tick / TICKS_PER_DAY) });
+          intelVersion++;
+        }
+      }
+    },
     update(state) {
       // the roster of OUR settlements — rebuilt when a capture changes it
       const mine = state.settlements.filter((x) => x.ownerRealm === 0);
@@ -172,6 +200,12 @@ export function createArmyPanel(
         // truce countdowns must repaint as the seasons pass
         state.realms.map((r) => `${r.id}:${r.atWarWith.join('.')}:${JSON.stringify(r.truceUntil)}`).join(';'),
         Math.floor(state.tick / TICKS_PER_DAY),
+        // espionage (M16b): gold gates the buttons, cooldowns disable them,
+        // missions in flight and fresh ledgers both change the rendering
+        state.realms[0].stock.gold | 0,
+        JSON.stringify(state.realms[0].spyCooldown),
+        state.missions.length,
+        intelVersion,
       ].join('|');
       if (sig === lastSig) return;
       lastSig = sig;
@@ -357,6 +391,67 @@ export function createArmyPanel(
           row.appendChild(declare);
         }
         diplomacyEl.appendChild(row);
+
+        // --- espionage (M16b): one spy line per rival, works in war or peace ---
+        const spyRow = document.createElement('div');
+        spyRow.className = 'ap-army ap-spy';
+        const cooldownLeft = (state.realms[0].spyCooldown[realm.id] ?? 0) - today;
+        const enRoute = state.missions.some((m) => m.realm === 0 && m.target === realm.id);
+        const odds = Math.round(successChance(state, realm.id) * 100);
+        const spyLabel = document.createElement('span');
+        spyLabel.textContent = enRoute
+          ? `🕵 an agent is on the road (${SPY_MISSION_DAYS} days' travel)`
+          : cooldownLeft > 0
+            ? `🕵 agents lie low — ${cooldownLeft} days`
+            : `🕵 ~${odds}% success`;
+        spyRow.appendChild(spyLabel);
+        // scout auto-targets the capital; a captured capital falls back to
+        // their lowest-id town, and a landless realm gets no scout at all
+        const theirTowns = state.settlements.filter((x) => x.ownerRealm === realm.id);
+        const scoutTarget = theirTowns.some((x) => x.id === realm.capital)
+          ? realm.capital
+          : theirTowns.reduce((a, b) => (a === -1 || b.id < a ? b.id : a), -1);
+        for (const [mission, text, hint] of SPY_BUTTONS) {
+          if (mission === 'scout' && scoutTarget === -1) continue;
+          const cost = SPY_COST[mission].gold ?? 0;
+          const b = document.createElement('button');
+          b.textContent = `${text} ${cost}g`;
+          const broke = (state.realms[0].stock.gold ?? 0) < cost;
+          b.disabled = cooldownLeft > 0 || broke;
+          b.title =
+            cooldownLeft > 0
+              ? `agents lie low for ${cooldownLeft} more days`
+              : broke
+                ? `needs ${cost} gold`
+                : hint;
+          b.addEventListener('click', () =>
+            enqueue({
+              kind: 'spyMission',
+              target: realm.id,
+              mission,
+              ...(mission === 'scout' ? { settlement: scoutTarget } : {}),
+            }),
+          );
+          spyRow.appendChild(b);
+        }
+        diplomacyEl.appendChild(spyRow);
+
+        // the latest smuggled ledger, if any agent ever brought one home
+        const entry = intelCache.get(realm.id);
+        if (entry) {
+          const { intel, day } = entry;
+          const intelRow = document.createElement('div');
+          intelRow.className = 'ap-army ap-intel';
+          const wars = intel.wars.map((w) => state.realms[w]?.name ?? `realm ${w}`).join(', ');
+          const parts = [
+            `gold ${Math.floor(intel.stock.gold ?? 0)}`,
+            `power ${Math.round(intel.power)} (yours ${Math.round(warPower(state, 0))})`,
+            wars ? `at war with ${wars}` : 'at peace with all',
+          ];
+          if (intel.wonderBuilding) parts.push('⚠ a Wonder rises');
+          intelRow.textContent = `📜 Day ${day} ledger: ${parts.join(' · ')}`;
+          diplomacyEl.appendChild(intelRow);
+        }
       }
     },
   };
