@@ -5,6 +5,7 @@ import { TECHS } from '../../content/techs';
 import { UNITS } from '../../content/units';
 import { totalUnits } from '../combat';
 import type { Command, IssuedCommand } from '../commands';
+import { acceptsPeace, activelyAttacking, aiPeaceOffer, isLosing, runawayLeader } from '../diplomacy';
 import type { GameState, Realm, SimSettlement } from '../state';
 import { dateOf, isDayEnd } from '../time';
 
@@ -110,6 +111,8 @@ export function stewardResearch(state: GameState, realm: Realm, towns: SimSettle
 export function aiSystem(state: GameState): IssuedCommand[] {
   if (!isDayEnd(state.tick)) return [];
   const out: IssuedCommand[] = [];
+  // one realm bestrides the world; the rest take counsel against it (M15)
+  const leader = runawayLeader(state);
 
   for (const realm of state.realms) {
     if (realm.isPlayer) continue;
@@ -140,11 +143,41 @@ export function aiSystem(state: GameState): IssuedCommand[] {
       if (UNITS[unit]) issue({ kind: 'trainUnits', settlement: seat.id, unit, count: 5 });
     }
 
+    // --- diplomacy (M15): sue when losing; join the pact against the mighty ---
+    for (const enemyId of [...realm.atWarWith].sort((x, y) => x - y)) {
+      const enemy = state.realms[enemyId];
+      if (!enemy) continue;
+      if (enemyId === leader) continue; // no separate peace with the tyrant while the pact stands
+      if (!isLosing(state, realm.id, enemyId)) continue;
+      // a conqueror at the gates will not be bought off — no suing away a
+      // campaign the enemy is actively prosecuting
+      if (activelyAttacking(state, enemyId, realm.id)) continue;
+      const tribute = { give: aiPeaceOffer(realm) };
+      // player targets auto-accept a pure gift; AI targets are pre-checked so
+      // the command stream carries no doomed offers
+      if (enemy.isPlayer || acceptsPeace(state, enemy, realm, tribute)) {
+        issue({ kind: 'offerPeace', target: enemyId, tribute });
+      }
+    }
+    if (leader !== null && leader !== realm.id) {
+      if (!realm.atWarWith.includes(leader) && day >= (realm.truceUntil[leader] ?? 0)) {
+        issue({ kind: 'declareWar', target: leader });
+      }
+      // fellow members settle their quarrels — the lower id extends the hand,
+      // so exactly one offer per pair reaches the queue
+      for (const other of state.realms) {
+        if (other.id <= realm.id || other.isPlayer || other.id === leader) continue;
+        if (realm.atWarWith.includes(other.id)) {
+          issue({ kind: 'offerPeace', target: other.id, tribute: {} });
+        }
+      }
+    }
+
     // --- war: after the grace period, march the garrison at the player ---
     const graceDays = Math.floor(400 / aggression);
     const player = state.realms.find((r) => r.isPlayer);
     if (player && day > graceDays) {
-      if (!realm.atWarWith.includes(player.id)) {
+      if (!realm.atWarWith.includes(player.id) && day >= (realm.truceUntil[player.id] ?? 0)) {
         issue({ kind: 'declareWar', target: player.id });
       } else if (
         totalUnits(seat.garrison) >= Math.max(25, garrisonTarget * 0.8) &&
@@ -153,12 +186,16 @@ export function aiSystem(state: GameState): IssuedCommand[] {
         issue({ kind: 'formArmy', settlement: seat.id, units: { ...seat.garrison } });
       }
     }
-    // an idle AI army marches on the player's weakest settlement
+    // an idle AI army marches on the weakest settlement of ANY war enemy
+    // (M15: coalition wars against an AI leader must prosecute too)
     const idle = state.armies.find((a) => a.ownerRealm === realm.id && a.phase === 'idle');
-    if (idle && player && realm.atWarWith.includes(player.id)) {
+    if (idle && realm.atWarWith.length > 0) {
       const targets = state.settlements
-        .filter((s) => s.ownerRealm === player.id)
-        .sort((a, b) => totalUnits(a.garrison) - totalUnits(b.garrison) || a.id - b.id);
+        .filter((s) => realm.atWarWith.includes(s.ownerRealm))
+        .sort(
+          (a, b) =>
+            totalUnits(a.garrison) - totalUnits(b.garrison) || a.ownerRealm - b.ownerRealm || a.id - b.id,
+        );
       if (targets.length > 0) {
         issue({
           kind: 'orderArmy',

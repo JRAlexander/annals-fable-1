@@ -43,7 +43,16 @@ export function victorySystem(state: GameState, out: SimEvent[]): void {
     return;
   }
 
-  if (state.realms.every((r) => state.settlements[r.capital]?.ownerRealm === 0)) {
+  // conquest = every rival SUBDUED: its seat player-held, or nothing left to
+  // it at all (a third realm may have eaten its capital — M15 coalitions make
+  // that real; Realm.capital is static by design, so ownership alone decides)
+  if (
+    state.realms.every(
+      (r) =>
+        state.settlements[r.capital]?.ownerRealm === 0 ||
+        (!r.isPlayer && !state.settlements.some((s) => s.ownerRealm === r.id)),
+    )
+  ) {
     state.outcome = { kind: 'victory', how: 'conquest' };
     out.push({ kind: 'gameWon', how: 'conquest' });
     return;

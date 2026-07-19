@@ -112,6 +112,33 @@ export function narrate(state: GameState, events: SimEvent[], rng: Rng): void {
           'grim',
         );
         break;
+      case 'peaceMade': {
+        // deliberately rng-free (no pick) — treaty prose must not shift the
+        // history stream's timeline
+        const gave = Object.entries(e.gave)
+          .map(([res, amt]) => `${amt} ${res}`)
+          .join(', ');
+        const demanded = Object.entries(e.demanded)
+          .map(([res, amt]) => `${amt} ${res}`)
+          .join(', ');
+        const terms = gave
+          ? ` ${state.realms[e.realm].name} pays tribute: ${gave}.`
+          : demanded
+            ? ` ${state.realms[e.target].name} pays tribute: ${demanded}.`
+            : '';
+        const playerGains = (e.target === 0 && gave !== '') || (e.realm === 0 && demanded !== '');
+        say(
+          `Peace is sworn between ${state.realms[e.realm].name} and ${state.realms[e.target].name}; the truce shall hold a season and more.${terms}`,
+          playerGains ? 'good' : 'neutral',
+        );
+        break;
+      }
+      case 'coalitionFormed':
+        say(
+          `The realms take counsel against the might of ${state.realms[e.against].name}: ${e.members.map((m) => state.realms[m].name).join(', ')} joins the pact.`,
+          e.against === 0 ? 'grim' : 'neutral',
+        );
+        break;
       case 'siegeStarted':
         say(`A hostile host stands before the gates of ${nameOf(e.settlement)}.`, 'grim');
         break;

@@ -38,6 +38,11 @@ export interface Realm {
   researchedTechs: TechId[];
   research: ResearchJob | null;
   atWarWith: RealmId[];
+  /**
+   * Day each truce lifts, by rival realm id (M15). Written symmetrically
+   * like atWarWith; stale (past-day) entries are inert and never pruned.
+   */
+  truceUntil: Record<RealmId, number>;
   /** The marshal runs this realm's military by the book (M14). Player realms only. */
   marshal: boolean;
 }
@@ -337,6 +342,7 @@ export function initGameState(world: WorldData, playerCulture: CultureId = 'vale
     researchedTechs: [],
     research: null,
     atWarWith: [],
+    truceUntil: {},
     marshal: false,
   });
   const realms = [

@@ -1,4 +1,4 @@
-import type { AgeId, BuildingId, ResourceId, TechId, UnitId } from '../content/schema';
+import type { AgeId, BuildingId, Cost, ResourceId, TechId, UnitId } from '../content/schema';
 import type { RealmId } from './state';
 
 /**
@@ -28,6 +28,9 @@ export type SimEvent =
   | { kind: 'armyReturned'; army: number; settlement: number }
   | { kind: 'armyDestroyed'; army: number; realm: RealmId }
   | { kind: 'warDeclared'; realm: RealmId; target: RealmId }
+  // M15: diplomacy
+  | { kind: 'peaceMade'; realm: RealmId; target: RealmId; gave: Cost; demanded: Cost }
+  | { kind: 'coalitionFormed'; against: RealmId; members: RealmId[] }
   | { kind: 'armyMarchedOnSettlement'; army: number; settlement: number }
   | { kind: 'siegeStarted'; army: number; settlement: number }
   | { kind: 'levyRaised'; settlement: number; count: number }
