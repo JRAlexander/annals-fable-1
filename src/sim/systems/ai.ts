@@ -1,5 +1,7 @@
 import { AGES, nextAge } from '../../content/ages';
+import { COALITION_GRACE_DAYS } from '../../content/diplomacy';
 import { FOOD_PER_POP_DAY, STARTING_VILLAGERS, VILLAGER_JOBS, type VillagerJob } from '../../content/economy';
+import { SPY_COST } from '../../content/espionage';
 import type { BuildingId, TechId } from '../../content/schema';
 import { TECHS } from '../../content/techs';
 import { UNITS } from '../../content/units';
@@ -106,13 +108,15 @@ export function stewardResearch(state: GameState, realm: Realm, towns: SimSettle
  * The rival realms' brain. Runs on the daily boundary and emits ordinary
  * IssuedCommands — the AI plays by exactly the player's rules, which is what
  * keeps the sim deterministic and replayable. Personality (aggression) is a
- * pure function of realm id; the ai rng stream stays in reserve.
+ * pure function of realm id; the ai rng stream belongs to espionage (M16).
  */
 export function aiSystem(state: GameState): IssuedCommand[] {
   if (!isDayEnd(state.tick)) return [];
   const out: IssuedCommand[] = [];
-  // one realm bestrides the world; the rest take counsel against it (M15)
-  const leader = runawayLeader(state);
+  const day = dateOf(state.tick).day;
+  // one realm bestrides the world; the rest take counsel against it (M15) —
+  // but the pact needs a season and a half of grievance first (M16 tuning)
+  const leader = day >= COALITION_GRACE_DAYS ? runawayLeader(state) : null;
 
   for (const realm of state.realms) {
     if (realm.isPlayer) continue;
@@ -123,7 +127,6 @@ export function aiSystem(state: GameState): IssuedCommand[] {
     const seat = mine.reduce((a, b) => (a.pop > b.pop ? a : b));
     const count = (b: BuildingId) => mine.reduce((t, s) => t + (s.buildings[b] ?? 0), 0);
     const aggression = 0.6 + (0.4 * ((realm.id * 7919) % 10)) / 10;
-    const day = dateOf(state.tick).day;
 
     // --- villagers: the shared housekeeping book (M12, factored for M13) ---
     for (const s of mine) {
@@ -171,6 +174,20 @@ export function aiSystem(state: GameState): IssuedCommand[] {
           issue({ kind: 'offerPeace', target: other.id, tribute: {} });
         }
       }
+    }
+
+    // --- espionage (M16): the one mission an omniscient AI values is
+    // slowing a rival's Wonder — scout and intel tell it nothing new
+    for (const other of state.realms) {
+      if (other.id === realm.id) continue;
+      const wonderRising = state.settlements.some(
+        (s) => s.ownerRealm === other.id && s.buildQueue.some((j) => j.building === 'wonder'),
+      );
+      if (!wonderRising) continue;
+      if (day < (realm.spyCooldown[other.id] ?? 0)) continue;
+      if (realm.stock.gold < (SPY_COST.sabotage.gold ?? 0) * 2) continue; // never beggar the realm for spies
+      issue({ kind: 'spyMission', target: other.id, mission: 'sabotage' });
+      break; // one agent a day
     }
 
     // --- war: after the grace period, march the garrison at the player ---

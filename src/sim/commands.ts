@@ -2,6 +2,13 @@ import { AGES, ageIndex, nextAge } from '../content/ages';
 import { BUILDINGS } from '../content/buildings';
 import { TRUCE_DAYS } from '../content/diplomacy';
 import { VILLAGER_COST, VILLAGER_JOBS, type VillagerJob } from '../content/economy';
+import {
+  SPY_COOLDOWN_DAYS,
+  SPY_COST,
+  SPY_MISSION_DAYS,
+  SPY_MISSIONS,
+  type SpyMissionKind,
+} from '../content/espionage';
 import type { BuildingId, Cost, ResourceId, TechId, UnitId } from '../content/schema';
 import { TECHS } from '../content/techs';
 import { WILD_REALM } from '../content/threats';
@@ -70,7 +77,9 @@ export type Command =
   | { kind: 'setSteward'; settlement: number; enabled: boolean }
   | { kind: 'setMarshal'; enabled: boolean }
   // Diplomacy (M15):
-  | { kind: 'offerPeace'; target: RealmId; tribute: Tribute };
+  | { kind: 'offerPeace'; target: RealmId; tribute: Tribute }
+  // Espionage (M16):
+  | { kind: 'spyMission'; target: RealmId; mission: SpyMissionKind; settlement?: number };
 
 export interface IssuedCommand {
   /** Tick it executes on (stamped at enqueue time). */
@@ -729,6 +738,49 @@ export function applyCommands(state: GameState, issued: IssuedCommand[], out: Si
           break;
         }
         makePeace(state, offerer, target, cmd.tribute, out);
+        break;
+      }
+      case 'spyMission': {
+        const r = state.realms[realm];
+        const target = state.realms[cmd.target];
+        if (!target || cmd.target === realm) {
+          reject(out, realm, 'no such rival realm');
+          break;
+        }
+        if (!SPY_MISSIONS.includes(cmd.mission)) {
+          reject(out, realm, `unknown mission '${cmd.mission}'`);
+          break;
+        }
+        if (cmd.mission === 'scout') {
+          if (
+            !Number.isInteger(cmd.settlement) ||
+            state.settlements[cmd.settlement as number]?.ownerRealm !== cmd.target
+          ) {
+            reject(out, realm, 'a scout needs one of their settlements to map');
+            break;
+          }
+        }
+        const day = dateOf(state.tick).day;
+        const cooldown = r.spyCooldown[cmd.target] ?? 0;
+        if (day < cooldown) {
+          reject(out, realm, `our agents in ${target.name} lie low for ${cooldown - day} more days`);
+          break;
+        }
+        const short = shortOf(r, SPY_COST[cmd.mission]);
+        if (short) {
+          reject(out, realm, `cannot fund the mission: needs ${short[1]} ${short[0]}`);
+          break;
+        }
+        pay(r, SPY_COST[cmd.mission]);
+        r.spyCooldown[cmd.target] = day + SPY_COOLDOWN_DAYS;
+        state.missions.push({
+          realm,
+          target: cmd.target,
+          mission: cmd.mission,
+          ...(cmd.mission === 'scout' ? { settlement: cmd.settlement } : {}),
+          resolveDay: day + SPY_MISSION_DAYS,
+        });
+        out.push({ kind: 'spyDispatched', realm, target: cmd.target, mission: cmd.mission });
         break;
       }
       case 'moveUnits':

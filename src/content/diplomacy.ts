@@ -24,6 +24,13 @@ export const TRIBUTE_FRACTION = 0.25;
  */
 export const PEACE_BASE = 300;
 
+/**
+ * The pact against a runaway leader needs a season and a half of grievance
+ * before it forms — seeds that deal the player a settlement majority open in
+ * peace, not instant world war (M16 tuning).
+ */
+export const COALITION_GRACE_DAYS = 90;
+
 /** Gold-equivalents for valuing mixed tribute — mirrors build-cost scarcity. */
 export const RESOURCE_VALUE: Record<ResourceId, number> = {
   gold: 1,
