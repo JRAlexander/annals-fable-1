@@ -8,6 +8,7 @@ import {
   VILLAGER_JOBS,
   type VillagerJob,
 } from '../content/economy';
+import type { SpyMissionKind } from '../content/espionage';
 import type { AgeId, BuildingId, CultureId, ResourceId, TechId, UnitId } from '../content/schema';
 import { terrainHeight } from '../worldgen/coords';
 import type { WorldData } from '../worldgen/types';
@@ -43,6 +44,8 @@ export interface Realm {
    * like atWarWith; stale (past-day) entries are inert and never pruned.
    */
   truceUntil: Record<RealmId, number>;
+  /** Day the next spy mission against each realm is allowed (M16). Inert when stale. */
+  spyCooldown: Record<RealmId, number>;
   /** The marshal runs this realm's military by the book (M14). Player realms only. */
   marshal: boolean;
 }
@@ -202,6 +205,20 @@ export interface Villager {
   timer: number;
 }
 
+/**
+ * A dispatched spy mission awaiting its resolve day (M16). Queued by the
+ * spyMission command (fee already paid); resolved by the espionage system in
+ * array order — the only consumer of the reserved `ai` rng stream.
+ */
+export interface SpyMission {
+  realm: RealmId;
+  target: RealmId;
+  mission: SpyMissionKind;
+  /** Scout only: the settlement whose surroundings the agent maps. */
+  settlement?: number;
+  resolveDay: number;
+}
+
 /** Live bandit camp state (site geography lives in WorldData.camps). */
 export interface BanditCamp {
   id: number;
@@ -227,6 +244,8 @@ export interface GameState {
   /** The working population (M12) — one entity per villager. */
   villagers: Villager[];
   nextVillagerId: number;
+  /** Spy missions in flight (M16), resolved in array order on their due day. */
+  missions: SpyMission[];
   camps: BanditCamp[]; // index === WorldData.camps id
   /** Latched by the victory system; the sim keeps ticking after — the world lives on. */
   outcome: GameOutcome | null;
@@ -343,6 +362,7 @@ export function initGameState(world: WorldData, playerCulture: CultureId = 'vale
     research: null,
     atWarWith: [],
     truceUntil: {},
+    spyCooldown: {},
     marshal: false,
   });
   const realms = [
@@ -433,6 +453,7 @@ export function initGameState(world: WorldData, playerCulture: CultureId = 'vale
     nextUnitId: 0,
     villagers,
     nextVillagerId,
+    missions: [],
     camps,
     outcome: null,
     dragonWoken: false,

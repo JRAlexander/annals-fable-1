@@ -1,3 +1,4 @@
+import type { SpyMissionKind } from '../content/espionage';
 import type { AgeId, BuildingId, Cost, ResourceId, TechId, UnitId } from '../content/schema';
 import type { RealmId } from './state';
 
@@ -31,6 +32,23 @@ export type SimEvent =
   // M15: diplomacy
   | { kind: 'peaceMade'; realm: RealmId; target: RealmId; gave: Cost; demanded: Cost }
   | { kind: 'coalitionFormed'; against: RealmId; members: RealmId[] }
+  // M16: espionage (intel carries SNAPSHOTS, never live references)
+  | { kind: 'spyDispatched'; realm: RealmId; target: RealmId; mission: SpyMissionKind }
+  | { kind: 'spyReport'; realm: RealmId; target: RealmId; settlement: number }
+  | {
+      kind: 'spyIntel';
+      realm: RealmId;
+      target: RealmId;
+      stock: Cost;
+      power: number;
+      wars: RealmId[];
+      truces: Record<RealmId, number>;
+      age: AgeId;
+      wonderBuilding: boolean;
+    }
+  | { kind: 'spySabotage'; realm: RealmId; target: RealmId; settlement: number; building: BuildingId | null }
+  | { kind: 'spyTheft'; realm: RealmId; target: RealmId; gold: number }
+  | { kind: 'spyCaught'; realm: RealmId; target: RealmId; mission: SpyMissionKind }
   | { kind: 'armyMarchedOnSettlement'; army: number; settlement: number }
   | { kind: 'siegeStarted'; army: number; settlement: number }
   | { kind: 'levyRaised'; settlement: number; count: number }

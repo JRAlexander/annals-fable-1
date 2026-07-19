@@ -6,6 +6,7 @@ import type { GameState } from './state';
 import { aiSystem } from './systems/ai';
 import { armiesSystem } from './systems/armies';
 import { constructionSystem } from './systems/construction';
+import { espionageSystem } from './systems/espionage';
 import { governorSystem } from './systems/governor';
 import { marshalSystem } from './systems/marshal';
 import { populationSystem } from './systems/population';
@@ -40,6 +41,7 @@ export function advanceTick(state: GameState, issued: IssuedCommand[], streams: 
     ...marshalSystem(state),
   ];
   applyCommands(state, auto.length ? [...issued, ...auto] : issued, events);
+  espionageSystem(state, events, streams.ai); // agents come due (M16)
   threatsSystem(state, events); // the wilds move before the day's marching
   constructionSystem(state, events);
   researchSystem(state, events);

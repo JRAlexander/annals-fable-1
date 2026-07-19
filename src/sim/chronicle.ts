@@ -139,6 +139,41 @@ export function narrate(state: GameState, events: SimEvent[], rng: Rng): void {
           e.against === 0 ? 'grim' : 'neutral',
         );
         break;
+      // espionage (M16) — all rng-free: spy prose must not shift the timeline
+      case 'spyReport':
+        if (e.realm === 0)
+          say(`Our agent returns from ${nameOf(e.settlement)} with maps of all that country.`, 'good');
+        break;
+      case 'spyIntel':
+        if (e.realm === 0)
+          say(`A ledger smuggled out of ${state.realms[e.target].name} lays their strength bare.`, 'good');
+        break;
+      case 'spySabotage':
+        if (e.realm === 0 && e.building)
+          say(`Fire in the night: the ${e.building} rising at ${nameOf(e.settlement)} is set back.`, 'good');
+        else if (e.target === 0 && e.building)
+          say(
+            `Sabotage! The ${e.building} at ${nameOf(e.settlement)} smoulders — a foreign hand, surely.`,
+            'grim',
+          );
+        break;
+      case 'spyTheft':
+        if (e.realm === 0)
+          say(`${e.gold} gold slips out of ${state.realms[e.target].name}'s vaults and into ours.`, 'good');
+        else if (e.target === 0) say(`Thieves in the treasury! ${e.gold} gold is gone.`, 'grim');
+        break;
+      case 'spyCaught':
+        if (e.realm === 0)
+          say(
+            `Our agent was seized in the streets of ${state.realms[e.target].name}; the fee is lost with them.`,
+            'grim',
+          );
+        else if (e.target === 0)
+          say(
+            `A spy of ${state.realms[e.realm].name} was taken within our walls — the keeps keep good watch.`,
+            'good',
+          );
+        break;
       case 'siegeStarted':
         say(`A hostile host stands before the gates of ${nameOf(e.settlement)}.`, 'grim');
         break;

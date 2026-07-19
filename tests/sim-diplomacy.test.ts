@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TRUCE_DAYS } from '../src/content/diplomacy';
+import { COALITION_GRACE_DAYS, TRUCE_DAYS } from '../src/content/diplomacy';
 import { totalUnits } from '../src/sim/combat';
 import type { Command } from '../src/sim/commands';
 import { acceptsPeace, isLosing, runawayLeader, warPower } from '../src/sim/diplomacy';
@@ -251,6 +251,7 @@ describe('diplomacy (M15): the AI sues and the pact forms', () => {
       }
     }
     expect(runawayLeader(sim.state)).toBe(0);
+    sim.state.tick = COALITION_GRACE_DAYS * TICKS_PER_DAY; // the grievance has aged (M16)
     const events = runUntil(
       sim,
       () => sim.state.realms[0].atWarWith.includes(1) && sim.state.realms[0].atWarWith.includes(2),
@@ -273,6 +274,7 @@ describe('diplomacy (M15): the AI sues and the pact forms', () => {
     // and realms 1×2 already feud — the pact must first make peace between members?
     // (members here are only realm 2; the feud is member-vs-LEADER, which stands)
     expect(runawayLeader(sim.state)).toBe(1);
+    sim.state.tick = COALITION_GRACE_DAYS * TICKS_PER_DAY; // past the pact's grace (M16)
     const events = runUntil(sim, () => sim.state.realms[2].atWarWith.includes(1), 30, 'AI joined pact');
     expect(events.some((e) => e.kind === 'coalitionFormed' && e.against === 1)).toBe(true);
     expect(sim.state.realms[0].atWarWith).toHaveLength(0); // the player was never conscripted
