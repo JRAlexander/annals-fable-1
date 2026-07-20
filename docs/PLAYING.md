@@ -234,6 +234,30 @@ The tradecraft:
 - **The ledger fades**: intel is a snapshot, kept until you reload the game —
   the chronicle keeps the prose record for posterity.
 
+## Trade (the market earns its name)
+
+Once your realm owns a **Market** (or Guildhall), the **Trade** section
+appears at the bottom of the build panel:
+
+- **The exchange**: sell 100 food, wood, or stone for gold — or spend 100
+  gold the other way — at the realm's standing rates (gold 1 : stone ½ :
+  wood ¼ : food ¼), **less the market's 25% cut**. Selling and buying back
+  loses the cut twice: the exchange is for emergencies and windfalls, not
+  arbitrage.
+- **Caravan routes**: pick a destination town from the route list and carts
+  roll automatically — out along the roads, sold at the far market, and home
+  with the gold. **Pay scales with distance** (~40 + 8 per road cell, half
+  paid at each end), and **foreign towns pay half again more** than your own.
+  Each Market or Guildhall at the home town supports one cart.
+- **The risks**: war closes the road — carts turn for home empty and the
+  route is struck. Lose the home town and its caravans are lost with it.
+  Storehouses matter: a fat payout over your gold cap is simply wasted.
+- **The techs finally pay**: Coinage, Caravans, Banking — and the cultural
+  gold techs — all scale real caravan income now, not just market stalls.
+- **Everyone trades**: rival realms run caravans too (a **Steward**ed town
+  of yours will keep its own route running). Their carts on your roads are
+  their gold, not yours.
+
 ## Your first hour, step by step
 
 1. **Your villagers ARE the economy.** Every scrap in your stockpile is carried
@@ -291,6 +315,15 @@ fled for home, harried and ashamed."*
 
 ## What's next on the roadmap
 
-v0.1 is complete: cultures, rival realms, war, threats, win/lose, and saves.
-Next is the **RTS layer** (M7+) — direct unit selection and control, free
-building placement, fog of war — see [docs/PLAN.md](PLAN.md) for the roadmap.
+v0.2 is a full game: the RTS layer (unit selection and control, free building
+placement, fog of war), true per-soldier combat with counters and micro, the
+villager economy where walk distance IS the gather rate, unit autonomy
+through full autopilot (governor, steward, marshal), diplomacy with peace,
+tribute, truces and coalitions, espionage with scouts, ledgers, saboteurs and
+counter-spy Keeps, and — newest — real trade: a market exchange and caravan
+routes that make gold ride the roads.
+
+Plausible nexts, in no particular order: a **naval layer** (today water is
+scenery), **sound and a proper menu** (the game is silent and settings-free),
+and **deeper content** — more cultures, siege engines beyond the ram, and
+branching techs. See [docs/PLAN.md](PLAN.md) for history.

@@ -110,7 +110,9 @@
       #armypanel .bm-hint { font-size: 10px; color: #6a6152; font-style: normal; }
       #buildmenu {
         position: fixed; right: 12px; top: 52px;
-        width: 250px; max-height: 80vh; overflow-y: auto;
+        /* stop above the minimap (200px + chrome, fixed bottom-right) — the
+           Trade section (M17b) made the panel long enough to slide under it */
+        width: 250px; max-height: calc(100vh - 300px); overflow-y: auto;
         padding: 12px;
         font: 12.5px/1.5 Georgia, 'Times New Roman', serif;
         color: #e9dcc3;
