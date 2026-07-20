@@ -1,7 +1,6 @@
 import { AGES, ageIndex, nextAge } from '../content/ages';
 import { BUILDINGS } from '../content/buildings';
 import { RESOURCE_VALUE, TRUCE_DAYS } from '../content/diplomacy';
-import { TRADE_SPREAD } from '../content/trade';
 import { VILLAGER_COST, VILLAGER_JOBS, type VillagerJob } from '../content/economy';
 import {
   SPY_COOLDOWN_DAYS,
@@ -13,6 +12,7 @@ import {
 import type { BuildingId, Cost, ResourceId, TechId, UnitId } from '../content/schema';
 import { TECHS } from '../content/techs';
 import { WILD_REALM } from '../content/threats';
+import { TRADE_SPREAD } from '../content/trade';
 import { UNITS } from '../content/units';
 import { hidx, worldToCell } from '../worldgen/coords';
 import { GRID, WORLD_SIZE } from '../worldgen/types';

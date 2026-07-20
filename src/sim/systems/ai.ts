@@ -8,6 +8,7 @@ import { UNITS } from '../../content/units';
 import { totalUnits } from '../combat';
 import type { Command, IssuedCommand } from '../commands';
 import { acceptsPeace, activelyAttacking, aiPeaceOffer, isLosing, runawayLeader } from '../diplomacy';
+import { findPath, pathReaches } from '../pathfind';
 import type { GameState, Realm, SimSettlement } from '../state';
 import { dateOf, isDayEnd } from '../time';
 
@@ -105,6 +106,37 @@ export function stewardResearch(state: GameState, realm: Realm, towns: SimSettle
 }
 
 /**
+ * One realm's trade book (M17): every market town without a caravan route
+ * gets one — the nearest OTHER own town first (short safe roads), else the
+ * nearest town of a realm we are not fighting. Every candidate is
+ * pathReaches-checked so an unroutable pick never becomes a daily
+ * commandRejected drumbeat. Pure. The AI runs it realm-wide; the steward
+ * (M14) runs the SAME book on opted-in player towns.
+ */
+export function stewardTrade(state: GameState, realm: Realm, towns: SimSettlement[]): Command[] {
+  const out: Command[] = [];
+  for (const s of towns) {
+    if (s.trade) continue;
+    if ((s.buildings.market ?? 0) + (s.buildings.guildhall ?? 0) <= 0) continue;
+    const home = state.world.settlements[s.id];
+    const candidates = state.settlements
+      .filter((t) => t.id !== s.id && !realm.atWarWith.includes(t.ownerRealm))
+      .map((t) => {
+        const site = state.world.settlements[t.id];
+        return { id: t.id, own: t.ownerRealm === realm.id, d: Math.hypot(site.x - home.x, site.z - home.z) };
+      })
+      .sort((a, b) => Number(b.own) - Number(a.own) || a.d - b.d || a.id - b.id);
+    for (const c of candidates) {
+      const there = state.world.settlements[c.id];
+      if (!pathReaches(findPath(state.world, home.i, home.j, there.i, there.j), there.i, there.j)) continue;
+      out.push({ kind: 'setTradeRoute', settlement: s.id, target: c.id });
+      break;
+    }
+  }
+  return out;
+}
+
+/**
  * The rival realms' brain. Runs on the daily boundary and emits ordinary
  * IssuedCommands — the AI plays by exactly the player's rules, which is what
  * keeps the sim deterministic and replayable. Personality (aggression) is a
@@ -137,6 +169,7 @@ export function aiSystem(state: GameState): IssuedCommand[] {
     for (const cmd of stewardBuildings(state, realm, mine, seat, day)) issue(cmd);
     const research = stewardResearch(state, realm, mine);
     if (research) issue(research);
+    for (const cmd of stewardTrade(state, realm, mine)) issue(cmd); // gold rides (M17)
 
     // --- military: keep a growing garrison at the seat ---
     const garrisonTarget = Math.floor((15 + day / 24) * aggression);

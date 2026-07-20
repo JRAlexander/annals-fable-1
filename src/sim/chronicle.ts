@@ -174,6 +174,28 @@ export function narrate(state: GameState, events: SimEvent[], rng: Rng): void {
             'good',
           );
         break;
+      // trade (M17) — rng-free like the spy prose: commerce must not shift the timeline
+      case 'routeEstablished':
+        if (e.realm === 0)
+          say(`A caravan route is opened from ${nameOf(e.settlement)} to ${nameOf(e.target)}.`, 'good');
+        break;
+      case 'caravanArrived':
+        // only the FIRST gold home per route earns a line — arrivals are routine after
+        if (e.realm === 0 && e.trips === 1)
+          say(
+            `The first carts return from ${nameOf(e.target)}: ${e.gold} gold rides into ${nameOf(e.settlement)}.`,
+            'good',
+          );
+        break;
+      case 'routeBroken':
+        if (e.realm === 0)
+          say(
+            e.reason === 'war'
+              ? `War closes the road: the caravans of ${nameOf(e.settlement)} are recalled.`
+              : `With ${nameOf(e.settlement)} fallen, its caravans are lost to the realm.`,
+            'grim',
+          );
+        break;
       case 'siegeStarted':
         say(`A hostile host stands before the gates of ${nameOf(e.settlement)}.`, 'grim');
         break;

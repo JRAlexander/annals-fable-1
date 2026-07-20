@@ -1,9 +1,4 @@
-import {
-  CART_RATE,
-  FOREIGN_TRADE_BONUS,
-  TRADE_BASE,
-  TRADE_PER_CELL,
-} from '../../content/trade';
+import { CART_RATE, FOREIGN_TRADE_BONUS, TRADE_BASE, TRADE_PER_CELL } from '../../content/trade';
 import { cellPos, hidx } from '../../worldgen/coords';
 import type { SimEvent } from '../events';
 import { resolveStat } from '../modifiers';

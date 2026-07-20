@@ -52,7 +52,14 @@ export type SimEvent =
   // M17: trade (gave/got are snapshots)
   | { kind: 'tradeExecuted'; realm: RealmId; gave: Cost; got: Cost }
   | { kind: 'routeEstablished'; realm: RealmId; settlement: number; target: number }
-  | { kind: 'caravanArrived'; realm: RealmId; settlement: number; target: number; gold: number; trips: number }
+  | {
+      kind: 'caravanArrived';
+      realm: RealmId;
+      settlement: number;
+      target: number;
+      gold: number;
+      trips: number;
+    }
   | { kind: 'routeBroken'; realm: RealmId; settlement: number; reason: 'war' | 'captured' }
   | { kind: 'armyMarchedOnSettlement'; army: number; settlement: number }
   | { kind: 'siegeStarted'; army: number; settlement: number }
