@@ -1,6 +1,6 @@
 import { AGES, ageIndex, nextAge } from '../content/ages';
 import { BUILDINGS } from '../content/buildings';
-import { TRUCE_DAYS } from '../content/diplomacy';
+import { RESOURCE_VALUE, TRUCE_DAYS } from '../content/diplomacy';
 import { VILLAGER_COST, VILLAGER_JOBS, type VillagerJob } from '../content/economy';
 import {
   SPY_COOLDOWN_DAYS,
@@ -12,11 +12,13 @@ import {
 import type { BuildingId, Cost, ResourceId, TechId, UnitId } from '../content/schema';
 import { TECHS } from '../content/techs';
 import { WILD_REALM } from '../content/threats';
+import { TRADE_SPREAD } from '../content/trade';
 import { UNITS } from '../content/units';
 import { hidx, worldToCell } from '../worldgen/coords';
 import { GRID, WORLD_SIZE } from '../worldgen/types';
 import { acceptsPeace, runawayLeader, type Tribute, tributeValue } from './diplomacy';
 import type { SimEvent } from './events';
+import { findPath, pathReaches } from './pathfind';
 import {
   ARMY_STANCES,
   type Army,
@@ -79,7 +81,10 @@ export type Command =
   // Diplomacy (M15):
   | { kind: 'offerPeace'; target: RealmId; tribute: Tribute }
   // Espionage (M16):
-  | { kind: 'spyMission'; target: RealmId; mission: SpyMissionKind; settlement?: number };
+  | { kind: 'spyMission'; target: RealmId; mission: SpyMissionKind; settlement?: number }
+  // Trade (M17):
+  | { kind: 'marketTrade'; give: ResourceId; get: ResourceId; amount: number }
+  | { kind: 'setTradeRoute'; settlement: number; target: number | null };
 
 export interface IssuedCommand {
   /** Tick it executes on (stamped at enqueue time). */
@@ -781,6 +786,72 @@ export function applyCommands(state: GameState, issued: IssuedCommand[], out: Si
           resolveDay: day + SPY_MISSION_DAYS,
         });
         out.push({ kind: 'spyDispatched', realm, target: cmd.target, mission: cmd.mission });
+        break;
+      }
+      case 'marketTrade': {
+        // any resource pair, priced through RESOURCE_VALUE minus the spread —
+        // a round trip loses 2× spread, so there is no arbitrage loop
+        const r = state.realms[realm];
+        if (!(cmd.give in RESOURCE_VALUE) || !(cmd.get in RESOURCE_VALUE) || cmd.give === cmd.get) {
+          reject(out, realm, 'the market does not deal in that exchange');
+          break;
+        }
+        if (!Number.isInteger(cmd.amount) || cmd.amount <= 0 || cmd.amount > 100_000) {
+          reject(out, realm, 'name a sensible amount to trade');
+          break;
+        }
+        if (!realmHasBuilding(state, r, 'market') && !realmHasBuilding(state, r, 'guildhall')) {
+          reject(out, realm, 'trade needs a market or guildhall');
+          break;
+        }
+        if (r.stock[cmd.give] < cmd.amount) {
+          reject(out, realm, `the realm holds no ${cmd.amount} ${cmd.give} to sell`);
+          break;
+        }
+        const got = Math.floor(
+          ((cmd.amount * RESOURCE_VALUE[cmd.give]) / RESOURCE_VALUE[cmd.get]) * (1 - TRADE_SPREAD),
+        );
+        if (got <= 0) {
+          reject(out, realm, 'too small a lot — the spread would eat it whole');
+          break;
+        }
+        r.stock[cmd.give] -= cmd.amount;
+        r.stock[cmd.get] += got; // the storage clamp trims any overflow this tick
+        out.push({ kind: 'tradeExecuted', realm, gave: { [cmd.give]: cmd.amount }, got: { [cmd.get]: got } });
+        break;
+      }
+      case 'setTradeRoute': {
+        const r = state.realms[realm];
+        const s = state.settlements[cmd.settlement];
+        if (!s || s.ownerRealm !== realm) {
+          reject(out, realm, 'not your settlement');
+          break;
+        }
+        if (cmd.target === null) {
+          delete s.trade; // carts on the road notice the mismatch and turn home
+          break;
+        }
+        const target = Number.isInteger(cmd.target) ? state.settlements[cmd.target] : undefined;
+        if (!target || cmd.target === cmd.settlement) {
+          reject(out, realm, 'no such town to trade with');
+          break;
+        }
+        if ((s.buildings.market ?? 0) + (s.buildings.guildhall ?? 0) <= 0) {
+          reject(out, realm, 'a caravan route needs a market or guildhall here');
+          break;
+        }
+        if (r.atWarWith.includes(target.ownerRealm)) {
+          reject(out, realm, 'no caravans cross a battle line');
+          break;
+        }
+        const home = state.world.settlements[s.id];
+        const there = state.world.settlements[target.id];
+        if (!pathReaches(findPath(state.world, home.i, home.j, there.i, there.j), there.i, there.j)) {
+          reject(out, realm, 'no road can be found to that town');
+          break;
+        }
+        s.trade = { target: cmd.target, trips: 0, lastGold: 0 }; // re-targeting a live route is legal
+        out.push({ kind: 'routeEstablished', realm, settlement: cmd.settlement, target: cmd.target });
         break;
       }
       case 'moveUnits':

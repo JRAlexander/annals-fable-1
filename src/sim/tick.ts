@@ -5,6 +5,7 @@ import type { SimEvent } from './events';
 import type { GameState } from './state';
 import { aiSystem } from './systems/ai';
 import { armiesSystem } from './systems/armies';
+import { caravansSystem } from './systems/caravans';
 import { constructionSystem } from './systems/construction';
 import { espionageSystem } from './systems/espionage';
 import { governorSystem } from './systems/governor';
@@ -48,6 +49,7 @@ export function advanceTick(state: GameState, issued: IssuedCommand[], streams: 
   trainingSystem(state, events);
   armiesSystem(state, events);
   villagersSystem(state, events); // the economy walks (M12)
+  caravansSystem(state, events); // and the gold rides (M17)
   if (isDayEnd(state.tick)) {
     populationSystem(state, events);
     const d = dateOf(state.tick);

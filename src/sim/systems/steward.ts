@@ -1,7 +1,7 @@
 import type { IssuedCommand } from '../commands';
 import type { GameState } from '../state';
 import { dateOf, isDayEnd } from '../time';
-import { stewardBuildings, stewardResearch } from './ai';
+import { stewardBuildings, stewardResearch, stewardTrade } from './ai';
 
 /**
  * The town steward (M14): opted-in player settlements get their construction
@@ -27,6 +27,10 @@ export function stewardSystem(state: GameState): IssuedCommand[] {
     // per-town scope: this town's counts, this town's queue — a manually
     // queued building here simply pre-empts the steward for the day
     for (const cmd of stewardBuildings(state, realm, [s], s, day)) {
+      out.push({ tick: state.tick, realm: s.ownerRealm, seq: STEWARD_SEQ_BASE + n++, cmd });
+    }
+    // a stewarded market town also keeps a caravan route running (M17)
+    for (const cmd of stewardTrade(state, realm, [s])) {
       out.push({ tick: state.tick, realm: s.ownerRealm, seq: STEWARD_SEQ_BASE + n++, cmd });
     }
     if (!researched.has(realm.id)) {

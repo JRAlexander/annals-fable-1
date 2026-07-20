@@ -280,6 +280,12 @@ function settlementFalls(state: GameState, army: Army, target: SimSettlement, ou
   delete target.rally;
   target.governor = false;
   target.steward = false;
+  // the old banner's trade dies with the town (M17): route gone, carts lost
+  if (target.trade) {
+    delete target.trade;
+    out.push({ kind: 'routeBroken', realm: from, settlement: target.id, reason: 'captured' });
+  }
+  state.caravans = state.caravans.filter((c) => c.home !== target.id);
   out.push({ kind: 'settlementCaptured', settlement: target.id, by: army.ownerRealm, from });
   army.engagedWith = undefined;
   goHomeward(state, army);

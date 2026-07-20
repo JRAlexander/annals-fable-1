@@ -87,6 +87,13 @@ export interface SimSettlement {
   governor: boolean;
   /** The steward queues this town's buildings (and the realm's research) (M14). */
   steward: boolean;
+  /**
+   * This town's caravan route (M17): carts run to `target` and back while it
+   * stands. Cleared with `delete` (rally pattern) — on war, capture, or an
+   * explicit null setTradeRoute. trips/lastGold feed the chronicle's
+   * first-arrival line and the UI status without any event memory.
+   */
+  trade?: { target: number; trips: number; lastGold: number };
 }
 
 export interface ConstructionJob {
@@ -219,6 +226,34 @@ export interface SpyMission {
   resolveDay: number;
 }
 
+/**
+ * A trade cart on the road (M17). Its owner is always DERIVED from
+ * settlements[home].ownerRealm — capture despawns the cart, so it can never
+ * dangle. `target` is a snapshot of the route at departure: whenever it
+ * disagrees with the settlement's live route the cart turns for home (one
+ * rule covers cleared, replaced, and war-broken routes). Payouts land in
+ * halves — half at the target, half at home (`banked` remembers the first)
+ * — so early storage caps don't swallow whole trips.
+ */
+export interface Caravan {
+  id: number;
+  home: number;
+  target: number;
+  phase: 'outbound' | 'returning';
+  /** True only on a completed sell leg — recalled carts come home unpaid. */
+  laden: boolean;
+  /** Gold already deposited at the target this trip (the first half). */
+  banked: number;
+  x: number;
+  z: number;
+  prevX: number;
+  prevZ: number;
+  /** findPath cells, walked like an army's; the return leg is the reverse. */
+  path: [number, number][];
+  pathIdx: number;
+  cellProgress: number;
+}
+
 /** Live bandit camp state (site geography lives in WorldData.camps). */
 export interface BanditCamp {
   id: number;
@@ -246,6 +281,9 @@ export interface GameState {
   nextVillagerId: number;
   /** Spy missions in flight (M16), resolved in array order on their due day. */
   missions: SpyMission[];
+  /** Trade carts on the road (M17), one per market/guildhall of a routed town. */
+  caravans: Caravan[];
+  nextCaravanId: number;
   camps: BanditCamp[]; // index === WorldData.camps id
   /** Latched by the victory system; the sim keeps ticking after — the world lives on. */
   outcome: GameOutcome | null;
@@ -454,6 +492,8 @@ export function initGameState(world: WorldData, playerCulture: CultureId = 'vale
     villagers,
     nextVillagerId,
     missions: [],
+    caravans: [],
+    nextCaravanId: 0,
     camps,
     outcome: null,
     dragonWoken: false,
