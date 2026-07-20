@@ -91,6 +91,47 @@ export function createToasts(
           }
         }
 
+        // --- espionage (M16b): dispatches, homecomings, and shame ---
+        if (e.kind === 'spyDispatched' && e.realm === 0) {
+          show(`🕵 An agent slips toward ${state.realms[e.target].name} (${e.mission})`, 'good');
+        }
+        if (e.kind === 'spyReport' && e.realm === 0) {
+          show(`🗺 Maps of ${siteOf(e.settlement)?.name ?? 'their country'} are on your table`, 'good');
+        }
+        if (e.kind === 'spyIntel' && e.realm === 0) {
+          show(`📜 A ledger smuggled out of ${state.realms[e.target].name} — see Diplomacy`, 'good');
+        }
+        if (e.kind === 'spySabotage' && e.realm === 0) {
+          show(
+            e.building
+              ? `🔥 Their ${e.building} burns — construction set back`
+              : `🕵 Your saboteur found nothing worth burning in ${state.realms[e.target].name}`,
+            'good',
+          );
+        }
+        if (e.kind === 'spySabotage' && e.target === 0 && e.building) {
+          const s = siteOf(e.settlement);
+          if (s)
+            alert(
+              `sabotage:${e.settlement}`,
+              `🔥 Sabotage! The ${e.building} at ${s.name} is set back!`,
+              s.x,
+              s.z,
+            );
+        }
+        if (e.kind === 'spyTheft' && e.realm === 0) {
+          show(`💰 ${e.gold} gold lifted from ${state.realms[e.target].name}'s vaults`, 'good');
+        }
+        if (e.kind === 'spyTheft' && e.target === 0) {
+          show(`💰 Thieves in the treasury — ${e.gold} gold is gone!`, 'bad');
+        }
+        if (e.kind === 'spyCaught' && e.realm === 0) {
+          show(`🕵 Your agent was seized in ${state.realms[e.target].name} — the fee is lost`, 'bad');
+        }
+        if (e.kind === 'spyCaught' && e.target === 0) {
+          show(`🕵 A spy of ${state.realms[e.realm].name} was taken within your walls`, 'good');
+        }
+
         // --- the war drums (M11): clickable, camera-jumping alerts ---
         if (e.kind === 'raidSpawned' && mineSettlement(e.settlement)) {
           const s = siteOf(e.settlement);

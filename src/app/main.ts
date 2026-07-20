@@ -34,6 +34,8 @@ import {
   isExploredAt,
   isVisibleAt,
   packExplored,
+  revealExplored,
+  SETTLEMENT_SIGHT_CELLS,
   unpackExplored,
 } from './visibility';
 
@@ -280,6 +282,7 @@ async function boot(): Promise<void> {
       const events = advanceTick(state, drain(), streams);
       chronicle.push(events);
       toasts.push(events, state);
+      armyPanel.pushEvents(events, state);
       refreshFog();
       autoExplore.update(); // enrolled idle armies pick their next frontier
       // per tick, not per frame — at 12× thirty ticks can pass per rAF
@@ -287,6 +290,16 @@ async function boot(): Promise<void> {
       combatDiff.deaths.push(...villagerTracker.diff(state)); // the fields bury their own
       effects.spawnFromDiff(combatDiff, state, fogQueries, loop.getSpeed());
       for (const e of events) {
+        // a spy's map (M16b): the scouted town's surroundings turn Explored —
+        // the sim only named the settlement; fog stays this layer's business.
+        // The dayEnd packExplored autosave below persists it for free.
+        if (e.kind === 'spyReport' && e.realm === 0 && state.world.settlements[e.settlement]) {
+          const site = state.world.settlements[e.settlement];
+          if (revealExplored(fogMask, site.i, site.j, SETTLEMENT_SIGHT_CELLS)) {
+            fogVersion++;
+            fogMesh.update(fogMask);
+          }
+        }
         if (e.kind === 'dayEnd') recorder.autosave(state.tick, packExplored(fogMask));
         if (!ended && (e.kind === 'gameWon' || e.kind === 'gameLost')) {
           ended = true;

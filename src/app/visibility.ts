@@ -33,6 +33,35 @@ function stamp(mask: Uint8Array, ci: number, cj: number, radius: number): void {
   }
 }
 
+/**
+ * A spy's map of foreign country (M16b): mark the disc around a scouted
+ * settlement EXPLORED — never Visible (no live sight from a departed agent),
+ * and never demoting cells the player already sees. Returns true when any
+ * cell changed so the caller knows to re-upload the fog mesh. Presentation
+ * only, like everything here: the sim's spyReport event just names the town.
+ */
+export function revealExplored(mask: Uint8Array, ci: number, cj: number, radius: number): boolean {
+  const r2 = radius * radius;
+  const i0 = Math.max(0, ci - radius);
+  const i1 = Math.min(GRID - 1, ci + radius);
+  const j0 = Math.max(0, cj - radius);
+  const j1 = Math.min(GRID - 1, cj + radius);
+  let changed = false;
+  for (let j = j0; j <= j1; j++) {
+    for (let i = i0; i <= i1; i++) {
+      const di = i - ci;
+      const dj = j - cj;
+      if (di * di + dj * dj > r2) continue;
+      const k = hidx(i, j);
+      if (mask[k] === Fog.Unexplored) {
+        mask[k] = Fog.Explored;
+        changed = true;
+      }
+    }
+  }
+  return changed;
+}
+
 /** What realm 0 can see RIGHT NOW: Visible cells set, everything else 0. */
 export function computeVisibility(state: GameState): Uint8Array {
   const mask = new Uint8Array(GRID * GRID);
