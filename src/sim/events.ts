@@ -49,6 +49,11 @@ export type SimEvent =
   | { kind: 'spySabotage'; realm: RealmId; target: RealmId; settlement: number; building: BuildingId | null }
   | { kind: 'spyTheft'; realm: RealmId; target: RealmId; gold: number }
   | { kind: 'spyCaught'; realm: RealmId; target: RealmId; mission: SpyMissionKind }
+  // M17: trade (gave/got are snapshots)
+  | { kind: 'tradeExecuted'; realm: RealmId; gave: Cost; got: Cost }
+  | { kind: 'routeEstablished'; realm: RealmId; settlement: number; target: number }
+  | { kind: 'caravanArrived'; realm: RealmId; settlement: number; target: number; gold: number; trips: number }
+  | { kind: 'routeBroken'; realm: RealmId; settlement: number; reason: 'war' | 'captured' }
   | { kind: 'armyMarchedOnSettlement'; army: number; settlement: number }
   | { kind: 'siegeStarted'; army: number; settlement: number }
   | { kind: 'levyRaised'; settlement: number; count: number }
