@@ -132,6 +132,19 @@ export function createToasts(
           show(`🕵 A spy of ${state.realms[e.realm].name} was taken within your walls`, 'good');
         }
 
+        // --- trade (M17b): the first gold home, and roads that close ---
+        if (e.kind === 'caravanArrived' && e.realm === 0 && e.trips === 1) {
+          show(`🛒 First caravan home from ${siteOf(e.target)?.name ?? 'the road'}: ${e.gold} gold`, 'good');
+        }
+        if (e.kind === 'routeBroken' && e.realm === 0) {
+          show(
+            e.reason === 'war'
+              ? `🛒 War closes the road — ${siteOf(e.settlement)?.name ?? 'your town'}'s caravans recalled`
+              : `🛒 ${siteOf(e.settlement)?.name ?? 'A town'} has fallen — its caravans are lost`,
+            'bad',
+          );
+        }
+
         // --- the war drums (M11): clickable, camera-jumping alerts ---
         if (e.kind === 'raidSpawned' && mineSettlement(e.settlement)) {
           const s = siteOf(e.settlement);

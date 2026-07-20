@@ -1,11 +1,15 @@
 import { AGES, ageIndex } from '../content/ages';
 import { BUILDING_IDS, BUILDINGS } from '../content/buildings';
+import { RESOURCE_VALUE } from '../content/diplomacy';
 import { JOB_RESOURCE, VILLAGER_COST, VILLAGER_JOBS, type VillagerJob } from '../content/economy';
 import type { BuildingId, ResourceId } from '../content/schema';
 import { TECHS } from '../content/techs';
+import { FOREIGN_TRADE_BONUS, TRADE_SPREAD } from '../content/trade';
 import { workplaceSlots } from '../sim/buildings';
 import type { Command } from '../sim/commands';
+import { findPath } from '../sim/pathfind';
 import type { GameState } from '../sim/state';
+import { routeGold } from '../sim/systems/caravans';
 
 const JOB_LABEL: Record<VillagerJob, string> = {
   farm: '🌾 Farms',
@@ -46,12 +50,16 @@ export function createBuildMenu(
     <div id="bm-queue" class="bm-queue"><i>empty</i></div>
     <div class="bm-section">Villagers</div>
     <div id="bm-villagers"></div>
+    <div class="bm-section" id="bm-trade-head">Trade <i class="bm-hint">the market deals in gold</i></div>
+    <div id="bm-trade"></div>
   `;
   const select = el.querySelector('#bm-settlement') as HTMLSelectElement;
   const popEl = el.querySelector('#bm-pop') as HTMLElement;
   const buildingsEl = el.querySelector('#bm-buildings') as HTMLElement;
   const queueEl = el.querySelector('#bm-queue') as HTMLElement;
   const villagersEl = el.querySelector('#bm-villagers') as HTMLElement;
+  const tradeHeadEl = el.querySelector('#bm-trade-head') as HTMLElement;
+  const tradeEl = el.querySelector('#bm-trade') as HTMLElement;
 
   let selected = -1;
   select.addEventListener('change', () => {
@@ -140,8 +148,64 @@ export function createBuildMenu(
     ui.plus.addEventListener('click', () => lastState && bump(job, +1, lastState));
   }
 
+  // --- trade (M17b): exchange rows, a caravan route select, a status line ---
+  // Exchange rates are fixed content (RESOURCE_VALUE ± spread), so the row
+  // labels are computed ONCE; only disabled-ness tracks the live stock.
+  const TRADE_LOT = 100;
+  const sellGets = (res: ResourceId) =>
+    Math.floor(((TRADE_LOT * RESOURCE_VALUE[res]) / RESOURCE_VALUE.gold) * (1 - TRADE_SPREAD));
+  const buyGets = (res: ResourceId) =>
+    Math.floor(((TRADE_LOT * RESOURCE_VALUE.gold) / RESOURCE_VALUE[res]) * (1 - TRADE_SPREAD));
+  const exchangeRows = new Map<ResourceId, { sell: HTMLButtonElement; buy: HTMLButtonElement }>();
+  for (const res of ['food', 'wood', 'stone'] as ResourceId[]) {
+    const row = document.createElement('div');
+    row.className = 'bm-qrow';
+    const sell = document.createElement('button');
+    sell.className = 'bm-step bm-trade-btn';
+    sell.textContent = `sell ${TRADE_LOT} ${res} → ${sellGets(res)}g`;
+    sell.addEventListener('click', () =>
+      enqueue({ kind: 'marketTrade', give: res, get: 'gold', amount: TRADE_LOT }),
+    );
+    const buy = document.createElement('button');
+    buy.className = 'bm-step bm-trade-btn';
+    buy.textContent = `${TRADE_LOT}g → ${buyGets(res)} ${res}`;
+    buy.addEventListener('click', () =>
+      enqueue({ kind: 'marketTrade', give: 'gold', get: res, amount: TRADE_LOT }),
+    );
+    row.append(sell, buy);
+    tradeEl.appendChild(row);
+    exchangeRows.set(res, { sell, buy });
+  }
+  const routeSel = document.createElement('select');
+  routeSel.title = 'Caravans run to this town and back, minting gold by the mile';
+  routeSel.addEventListener('change', () => {
+    enqueue({
+      kind: 'setTradeRoute',
+      settlement: selected,
+      target: routeSel.value === '' ? null : Number(routeSel.value),
+    });
+  });
+  tradeEl.appendChild(routeSel);
+  const tradeStatusEl = document.createElement('div');
+  tradeStatusEl.className = 'bm-qrow';
+  tradeEl.appendChild(tradeStatusEl);
+  // route lengths never change (the world is static) — cache per pair
+  const routeCells = new Map<string, number>();
+  const cellsBetween = (state: GameState, a: number, b: number): number => {
+    const key = `${a}:${b}`;
+    let cells = routeCells.get(key);
+    if (cells === undefined) {
+      const sa = state.world.settlements[a];
+      const sb = state.world.settlements[b];
+      cells = findPath(state.world, sa.i, sa.j, sb.i, sb.j).length - 1;
+      routeCells.set(key, cells);
+    }
+    return cells;
+  };
+
   let lastOwnSig = '';
   let lastQueueSig = '';
+  let lastTradeSig = '';
 
   return {
     update(state) {
@@ -219,6 +283,64 @@ export function createBuildMenu(
         ui.label.textContent = `${assigned}/${s.jobTargets[job]}${cap !== null ? ` (cap ${cap})` : ''}`;
         ui.plus.disabled = s.governor || (cap !== null && s.jobTargets[job] >= cap);
         ui.minus.disabled = s.governor || s.jobTargets[job] <= 0;
+      }
+
+      // --- trade (M17b) ---
+      const realmTrades = state.settlements.some(
+        (x) => x.ownerRealm === 0 && (x.buildings.market ?? 0) + (x.buildings.guildhall ?? 0) > 0,
+      );
+      const show = realmTrades ? '' : 'none';
+      if (tradeHeadEl.style.display !== show) {
+        tradeHeadEl.style.display = show;
+        tradeEl.style.display = show;
+      }
+      if (realmTrades) {
+        // exchange buttons: labels are fixed, only affordability moves
+        for (const [res, ui] of exchangeRows) {
+          ui.sell.disabled = realm.stock[res] < TRADE_LOT;
+          ui.buy.disabled = realm.stock.gold < TRADE_LOT;
+        }
+        const marketsHere = (s.buildings.market ?? 0) + (s.buildings.guildhall ?? 0);
+        // rebuild the route options only when the world of choices moves —
+        // NOT on gold ticks, so an open dropdown is never yanked shut
+        const tradeSig = [
+          selected,
+          marketsHere,
+          JSON.stringify(s.trade ?? null),
+          state.realms[0].atWarWith.join('.'),
+          state.settlements.map((t) => t.ownerRealm).join(''),
+        ].join('|');
+        if (tradeSig !== lastTradeSig) {
+          lastTradeSig = tradeSig;
+          routeSel.innerHTML = '';
+          const none = document.createElement('option');
+          none.value = '';
+          none.textContent = marketsHere > 0 ? '🛒 no caravan route' : '🛒 route needs a market here';
+          routeSel.appendChild(none);
+          if (marketsHere > 0) {
+            for (const t of state.settlements) {
+              if (t.id === s.id || state.realms[0].atWarWith.includes(t.ownerRealm)) continue;
+              const site = state.world.settlements[t.id];
+              const foreign = t.ownerRealm !== 0;
+              const per = Math.floor(
+                routeGold(cellsBetween(state, s.id, t.id)) * (foreign ? FOREIGN_TRADE_BONUS : 1),
+              );
+              const opt = document.createElement('option');
+              opt.value = String(t.id);
+              opt.textContent = `🛒 ${site.name}${foreign ? ` (${state.realms[t.ownerRealm]?.name ?? '?'})` : ''} · ~${per}g/trip`;
+              routeSel.appendChild(opt);
+            }
+          }
+          routeSel.disabled = marketsHere <= 0;
+          routeSel.value = s.trade ? String(s.trade.target) : '';
+        }
+        const carts = state.caravans.filter((c) => c.home === s.id).length;
+        const status = s.trade
+          ? `🛒 ${carts} cart${carts === 1 ? '' : 's'} · ${s.trade.trips} trip${s.trade.trips === 1 ? '' : 's'}${s.trade.lastGold ? ` · last ${s.trade.lastGold}g` : ''}`
+          : marketsHere > 0
+            ? '🛒 the road awaits a route'
+            : '';
+        if (tradeStatusEl.textContent !== status) tradeStatusEl.textContent = status;
       }
     },
   };
