@@ -2,6 +2,7 @@ import { CULTURE_IDS, CULTURES } from '../content/cultures';
 import type { CultureId, Modifier } from '../content/schema';
 import { makeStreams } from '../core/rng';
 import { createArmies } from '../render/armiesMesh';
+import { createCaravans } from '../render/caravansMesh';
 import { createConstructed } from '../render/constructedMesh';
 import { createEffects } from '../render/effects';
 import { createFog } from '../render/fogMesh';
@@ -263,6 +264,7 @@ async function boot(): Promise<void> {
   const effects = createEffects(scene.scene, world);
   const scaffolds = createScaffolds(scene.scene, world);
   const villagersMesh = createVillagers(scene.scene, world);
+  const caravansMesh = createCaravans(scene.scene, world);
   const input = createInput({
     scene,
     world,
@@ -326,6 +328,7 @@ async function boot(): Promise<void> {
         }
       }
       villagersMesh.sync(state, alpha, fogQueries);
+      caravansMesh.sync(state, alpha, fogQueries);
       armies.sync(state, alpha, input.selection, fogQueries, input.unitSelection, {
         maxHp: tracker.maxHp,
         camera: scene.camera,
