@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { GameState } from '../sim/state';
 import { terrainHeight } from '../worldgen/coords';
 import type { WorldData } from '../worldgen/types';
+import { unitGeo } from './unitKit';
 
 /**
  * Trade carts on the road (M17b): each caravan an instanced wagon rolling
@@ -18,9 +19,8 @@ export interface CaravansHandle {
 }
 
 export function createCaravans(scene: THREE.Scene, world: WorldData): CaravansHandle {
-  // a low, broad wagon — unmistakably not a villager
-  const geo = new THREE.BoxGeometry(5, 3.5, 3);
-  geo.translate(0, 1.75, 0);
+  // the kit's covered wagon — unmistakably not a villager
+  const geo = unitGeo('caravan');
 
   let mesh: THREE.InstancedMesh | null = null;
   let cap = 0;
@@ -29,7 +29,11 @@ export function createCaravans(scene: THREE.Scene, world: WorldData): CaravansHa
     if (mesh && need <= cap) return;
     if (mesh) scene.remove(mesh);
     cap = Math.max(16, need * 2);
-    mesh = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({ color: 0xffffff }), cap);
+    mesh = new THREE.InstancedMesh(
+      geo,
+      new THREE.MeshLambertMaterial({ vertexColors: true, color: 0xffffff }),
+      cap,
+    );
     mesh.name = 'caravans';
     mesh.frustumCulled = false;
     mesh.raycast = () => {};
@@ -38,22 +42,33 @@ export function createCaravans(scene: THREE.Scene, world: WorldData): CaravansHa
 
   const _m = new THREE.Matrix4();
   const _q = new THREE.Quaternion();
+  const _e = new THREE.Euler();
   const _v = new THREE.Vector3();
   const _s = new THREE.Vector3(1, 1, 1);
   const _c = new THREE.Color();
+  /** Last roll heading per caravan id — a halted cart stays pointed down its road. */
+  const headings = new Map<number, number>();
 
   return {
     sync(state, alpha, fog) {
       ensure(state.caravans.length);
       if (!mesh) return;
+      if (headings.size > state.caravans.length * 4 + 16) headings.clear();
       let i = 0;
       for (const c of state.caravans) {
         const owner = state.settlements[c.home]?.ownerRealm ?? 0;
         const x = c.prevX + (c.x - c.prevX) * alpha;
         const z = c.prevZ + (c.z - c.prevZ) * alpha;
         if (fog && owner !== 0 && !fog.visibleAt(x, z)) continue; // foreign commerce keeps its secrets
+        const dx = c.x - c.prevX;
+        const dz = c.z - c.prevZ;
+        let heading = headings.get(c.id) ?? 0;
+        if (dx * dx + dz * dz > 0.25) {
+          heading = Math.atan2(dx, dz);
+          headings.set(c.id, heading);
+        }
         _v.set(x, terrainHeight(world.heightmap, x, z), z);
-        _q.identity();
+        _q.setFromEuler(_e.set(0, heading, 0));
         _m.compose(_v, _q, _s);
         mesh.setMatrixAt(i, _m);
         _c.set(owner === 0 ? CART_COLOR.player : CART_COLOR.rival);
