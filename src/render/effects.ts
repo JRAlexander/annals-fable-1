@@ -3,6 +3,7 @@ import type { GameState } from '../sim/state';
 import { terrainHeight } from '../worldgen/coords';
 import type { WorldData } from '../worldgen/types';
 import { SOLDIER_COLOR } from './armiesMesh';
+import { UNIT_KINDS, type UnitKind, unitGeo } from './unitKit';
 import type { TickCombatEvents } from './unitTracker';
 
 /**
@@ -35,6 +36,7 @@ interface Death {
   x: number;
   y: number;
   z: number;
+  kind: UnitKind; // the fallen topple as the model they were (M18a)
   color: number;
   axis: number; // topple direction, radians
   age: number;
@@ -65,13 +67,28 @@ export function createEffects(scene: THREE.Scene, world: WorldData): EffectsHand
     new THREE.MeshBasicMaterial({ color: 0xe8dcb8 }),
     ARROW_CAP,
   );
-  const deathGeo = new THREE.BoxGeometry(3.2, 9, 3.2);
-  deathGeo.translate(0, 4.5, 0);
-  const deathMesh = new THREE.InstancedMesh(
-    deathGeo,
-    new THREE.MeshLambertMaterial({ color: 0xffffff }),
-    DEATH_CAP,
-  );
+  // one small corpse pool per unit type, created the first time that type falls
+  const KIND_SET = new Set<string>(UNIT_KINDS);
+  const deathKind = (t: string): UnitKind => (KIND_SET.has(t) ? (t as UnitKind) : 'militia');
+  const deathPools = new Map<UnitKind, { mesh: THREE.InstancedMesh; idx: number }>();
+  const deathPool = (kind: UnitKind) => {
+    let p = deathPools.get(kind);
+    if (!p) {
+      const mesh = new THREE.InstancedMesh(
+        unitGeo(kind),
+        new THREE.MeshLambertMaterial({ vertexColors: true, color: 0xffffff }),
+        DEATH_CAP,
+      );
+      mesh.name = `fx-deaths-${kind}`;
+      mesh.frustumCulled = false;
+      mesh.raycast = () => {};
+      mesh.count = 0;
+      scene.add(mesh);
+      p = { mesh, idx: 0 };
+      deathPools.set(kind, p);
+    }
+    return p;
+  };
   const flashGeo = new THREE.RingGeometry(1.5, 3, 10);
   flashGeo.rotateX(-Math.PI / 2);
   const flashMesh = new THREE.InstancedMesh(
@@ -84,14 +101,13 @@ export function createEffects(scene: THREE.Scene, world: WorldData): EffectsHand
     }),
     FLASH_CAP,
   );
-  for (const m of [arrowMesh, deathMesh, flashMesh]) {
+  for (const m of [arrowMesh, flashMesh]) {
     m.frustumCulled = false;
     m.raycast = () => {};
     m.count = 0;
     scene.add(m);
   }
   arrowMesh.name = 'fx-arrows';
-  deathMesh.name = 'fx-deaths';
   flashMesh.name = 'fx-flashes';
 
   const arrows: Arrow[] = [];
@@ -155,6 +171,7 @@ export function createEffects(scene: THREE.Scene, world: WorldData): EffectsHand
           x: d.x,
           y: groundY(d.x, d.z),
           z: d.z,
+          kind: deathKind(d.type),
           color:
             d.owner === 0 ? SOLDIER_COLOR.player : d.owner < 0 ? SOLDIER_COLOR.wild : SOLDIER_COLOR.rival,
           axis: (d.x * 0.37 + d.z * 0.73) % 6.283, // deterministic topple direction
@@ -189,27 +206,33 @@ export function createEffects(scene: THREE.Scene, world: WorldData): EffectsHand
       arrowMesh.count = i;
       arrowMesh.instanceMatrix.needsUpdate = true;
 
-      i = 0;
       for (let k = deaths.length - 1; k >= 0; k--) {
         deaths[k].age += dt;
         if (deaths[k].age >= DEATH_MS) deaths.splice(k, 1);
       }
+      for (const p of deathPools.values()) p.idx = 0;
       for (const d of deaths) {
+        const p = deathPool(d.kind);
+        if (p.idx >= DEATH_CAP) continue;
         const t = d.age / DEATH_MS;
         const topple = Math.min(1, t / 0.6);
         const sink = t > 0.6 ? ((t - 0.6) / 0.4) * 6 : 0;
+        const usc = d.kind === 'dragon' ? 4 : 1;
         _axis.set(Math.cos(d.axis), 0, Math.sin(d.axis));
         _q.setFromAxisAngle(_axis, topple * (Math.PI / 2));
         _v.set(d.x, d.y - sink, d.z);
-        _s.set(1, 1, 1);
+        _s.set(usc, usc, usc);
         _m.compose(_v, _q, _s);
-        deathMesh.setMatrixAt(i, _m);
-        deathMesh.setColorAt(i, _c.set(d.color).lerp(_c2, t));
-        i++;
+        p.mesh.setMatrixAt(p.idx, _m);
+        // the dragon falls in its true colors; everyone else fades from their banner
+        p.mesh.setColorAt(p.idx, _c.set(d.kind === 'dragon' ? 0xffffff : d.color).lerp(_c2, t));
+        p.idx++;
       }
-      deathMesh.count = i;
-      deathMesh.instanceMatrix.needsUpdate = true;
-      if (deathMesh.instanceColor) deathMesh.instanceColor.needsUpdate = true;
+      for (const p of deathPools.values()) {
+        p.mesh.count = p.idx;
+        p.mesh.instanceMatrix.needsUpdate = true;
+        if (p.mesh.instanceColor) p.mesh.instanceColor.needsUpdate = true;
+      }
 
       i = 0;
       for (let k = flashes.length - 1; k >= 0; k--) {

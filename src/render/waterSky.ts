@@ -2,12 +2,13 @@ import * as THREE from 'three';
 import { cellPos, terrainHeight } from '../worldgen/coords';
 import type { WorldData } from '../worldgen/types';
 import { MAX_HEIGHT, SEA_LEVEL, WORLD_SIZE } from '../worldgen/types';
+import { WATER } from './terrainPalette';
 
 function waterMat(color: number): THREE.MeshPhongMaterial {
   return new THREE.MeshPhongMaterial({
     color,
     transparent: true,
-    opacity: 0.82,
+    opacity: WATER.opacity,
     shininess: 90,
     specular: 0x88bbdd,
   });
@@ -19,7 +20,7 @@ export function buildWater(world: WorldData): THREE.Group {
   if (world.coastEdge >= 0) {
     const g = new THREE.PlaneGeometry(WORLD_SIZE * 1.4, WORLD_SIZE * 1.4, 1, 1);
     g.rotateX(-Math.PI / 2);
-    const sea = new THREE.Mesh(g, waterMat(0x2b5a72));
+    const sea = new THREE.Mesh(g, waterMat(WATER.sea));
     sea.position.y = SEA_LEVEL * MAX_HEIGHT - 1;
     group.add(sea);
   }
@@ -62,7 +63,7 @@ export function buildWater(world: WorldData): THREE.Group {
   g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   g.setIndex(indices);
   g.computeVertexNormals();
-  group.add(new THREE.Mesh(g, waterMat(0x35708c)));
+  group.add(new THREE.Mesh(g, waterMat(WATER.river)));
   return group;
 }
 

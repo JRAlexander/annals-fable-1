@@ -1,36 +1,23 @@
 import * as THREE from 'three';
-import { clamp } from '../core/math';
 import { hidx, terrainHeight, worldToCell } from '../worldgen/coords';
 import type { WorldData } from '../worldgen/types';
-import { Biome, GRID, MAX_HEIGHT, WORLD_SIZE } from '../worldgen/types';
+import { GRID, MAX_HEIGHT, WORLD_SIZE } from '../worldgen/types';
+import { type PaletteBiome, biomeColor as paletteColor } from './terrainPalette';
 
-/** ANNALS biome palette (spring, no snow — seasons return with the sim). */
+/** Numeric BiomeId → the palette's named swatches (M18b), in enum order. */
+const BIOME_NAME: readonly PaletteBiome[] = [
+  'Meadow',
+  'Farmland',
+  'Deciduous',
+  'Pine',
+  'Rock',
+  'Marsh',
+  'Water',
+];
+
+/** Kept numeric-signature shim — the minimap paints with the same brush. */
 export function biomeColor(b: number, h: number): THREE.Color {
-  const c = new THREE.Color();
-  switch (b) {
-    case Biome.Meadow:
-      c.setHSL(0.28, 0.45, 0.42);
-      break;
-    case Biome.Farmland:
-      c.setHSL(0.22, 0.5, 0.45);
-      break;
-    case Biome.Deciduous:
-      c.setHSL(0.33, 0.5, 0.3);
-      break;
-    case Biome.Pine:
-      c.setHSL(0.42, 0.35, 0.26);
-      break;
-    case Biome.Rock:
-      c.setHSL(0.08, 0.12, 0.5);
-      break;
-    case Biome.Marsh:
-      c.setHSL(0.18, 0.3, 0.35);
-      break;
-    default:
-      c.setHSL(0.57, 0.5, 0.32); // underwater terrain
-  }
-  c.offsetHSL(0, 0, clamp(h / MAX_HEIGHT - 0.4, -1, 1) * 0.12);
-  return c;
+  return paletteColor(BIOME_NAME[b] ?? 'Water', h / MAX_HEIGHT);
 }
 
 export function buildTerrainMesh(world: WorldData): THREE.Mesh {

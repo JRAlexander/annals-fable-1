@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { GameState } from '../sim/state';
 import { terrainHeight } from '../worldgen/coords';
 import type { WorldData } from '../worldgen/types';
+import { unitGeo } from './unitKit';
 
 /**
  * The working population, visible at last (M12b): every villager a small
@@ -25,8 +26,7 @@ export interface VillagersHandle {
 }
 
 export function createVillagers(scene: THREE.Scene, world: WorldData): VillagersHandle {
-  const geo = new THREE.BoxGeometry(2.2, 5, 2.2);
-  geo.translate(0, 2.5, 0);
+  const geo = unitGeo('villager');
 
   let mesh: THREE.InstancedMesh | null = null;
   let cap = 0;
@@ -35,7 +35,11 @@ export function createVillagers(scene: THREE.Scene, world: WorldData): Villagers
     if (mesh && need <= cap) return;
     if (mesh) scene.remove(mesh);
     cap = Math.max(64, need * 2);
-    mesh = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({ color: 0xffffff }), cap);
+    mesh = new THREE.InstancedMesh(
+      geo,
+      new THREE.MeshLambertMaterial({ vertexColors: true, color: 0xffffff }),
+      cap,
+    );
     mesh.name = 'villagers';
     mesh.frustumCulled = false;
     mesh.raycast = () => {};
@@ -44,22 +48,33 @@ export function createVillagers(scene: THREE.Scene, world: WorldData): Villagers
 
   const _m = new THREE.Matrix4();
   const _q = new THREE.Quaternion();
+  const _e = new THREE.Euler();
   const _v = new THREE.Vector3();
   const _s = new THREE.Vector3(1, 1, 1);
   const _c = new THREE.Color();
+  /** Last walk heading per villager id — workers at rest keep facing their path. */
+  const headings = new Map<number, number>();
 
   return {
     sync(state, alpha, fog) {
       ensure(state.villagers.length);
       if (!mesh) return;
+      if (headings.size > state.villagers.length * 4 + 64) headings.clear();
       let i = 0;
       for (const v of state.villagers) {
         const owner = state.settlements[v.settlement]?.ownerRealm ?? 0;
         const x = v.prevX + (v.x - v.prevX) * alpha;
         const z = v.prevZ + (v.z - v.prevZ) * alpha;
         if (fog && owner !== 0 && !fog.visibleAt(x, z)) continue; // unseen hands stay unseen
+        const dx = v.x - v.prevX;
+        const dz = v.z - v.prevZ;
+        let heading = headings.get(v.id) ?? 0;
+        if (dx * dx + dz * dz > 0.25) {
+          heading = Math.atan2(dx, dz);
+          headings.set(v.id, heading);
+        }
         _v.set(x, terrainHeight(world.heightmap, x, z), z);
-        _q.identity();
+        _q.setFromEuler(_e.set(0, heading, 0));
         _m.compose(_v, _q, _s);
         mesh.setMatrixAt(i, _m);
         const base =

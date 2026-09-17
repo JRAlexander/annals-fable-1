@@ -126,7 +126,7 @@ World units ≈ meters. Today's placeholder boxes and the required envelopes:
 | Ram | ~6 × 6 × 10 | Long, low, wheeled |
 | Dragon | ~4× soldier scale is applied BY THE GAME to your 1× model | Build at soldier scale; wingspan may reach ±8 wu |
 | Villager | 2.2 × 5 × 2.2 | Visibly smaller and humbler than any soldier |
-| Caravan | 5 × 3.5 × 3 | A cart; drawn separately from villagers |
+| Caravan | 3.5 × 3.5 × 5.7 | A cart, long axis along +Z (travel) so the ox leads the wagon; drawn separately from villagers |
 
 **The camera is far**: default view is ~1,340 wu out at ~40° pitch with a 50°
 FOV — a 9-wu soldier is **about 8 pixels tall** on a 1080p screen. Players
