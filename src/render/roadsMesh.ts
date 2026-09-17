@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { cellPos, terrainHeight } from '../worldgen/coords';
 import type { WorldData } from '../worldgen/types';
 import { MAX_HEIGHT, SEA_LEVEL } from '../worldgen/types';
+import { ROAD } from './terrainPalette';
 
 function colorGeo(g: THREE.BufferGeometry, col: number): THREE.BufferGeometry {
   const c = new THREE.Color(col);
@@ -32,7 +33,7 @@ export function buildRoadsMesh(world: WorldData): THREE.Group {
       const len = Math.hypot(dx, dz) || 1;
       const nx = -dz / len;
       const nz = dx / len;
-      const wdt = 3.2;
+      const wdt = ROAD.width;
       const ya = terrainHeight(world.heightmap, a.x, a.z) + 0.6;
       const yb = terrainHeight(world.heightmap, b.x, b.z) + 0.6;
       positions.push(
@@ -57,7 +58,7 @@ export function buildRoadsMesh(world: WorldData): THREE.Group {
   g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   g.setIndex(indices);
   g.computeVertexNormals();
-  group.add(new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: 0x8a7355 })));
+  group.add(new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: ROAD.color })));
 
   // bridges: small deck boxes at water crossings
   const bpos: { x: number; z: number }[] = [];

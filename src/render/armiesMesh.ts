@@ -3,7 +3,7 @@ import { totalUnits } from '../sim/combat';
 import type { GameState } from '../sim/state';
 import { terrainHeight } from '../worldgen/coords';
 import type { WorldData } from '../worldgen/types';
-import { archGeo } from './buildingsMesh';
+import { buildingGeo } from './buildingKit';
 import { UNIT_KINDS, type UnitKind, unitGeo, unitHeight } from './unitKit';
 
 const PHASE_COLOR: Record<string, number> = {
@@ -65,8 +65,8 @@ export interface ArmiesHandle {
  * The cone mesh doubles as the RTS pick target; selection shows as a ring.
  */
 export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle {
-  // camp tents: built once, hidden when cleared
-  const tentGeo = archGeo('longhouse');
+  // camp tents: built once, hidden when cleared — the kit's hide tents (M18b)
+  const tentGeo = buildingGeo('tent', 'valen');
   const tents = new THREE.InstancedMesh(
     tentGeo,
     new THREE.MeshLambertMaterial({ vertexColors: true, color: 0x554433 }),
@@ -83,7 +83,7 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
   world.camps.forEach((c, k) => {
     const y = terrainHeight(world.heightmap, c.x, c.z);
     _v.set(c.x, y, c.z);
-    _s.set(1.8, 1.4, 1.8);
+    _s.set(1, 1, 1);
     _q.identity();
     _m.compose(_v, _q, _s);
     tents.setMatrixAt(k, _m);
@@ -207,7 +207,7 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
           tentShown[camp.id] = want;
           if (want) {
             _v.set(c.x, terrainHeight(world.heightmap, c.x, c.z), c.z);
-            _s.set(1.8, 1.4, 1.8);
+            _s.set(1, 1, 1);
           } else {
             _v.set(c.x, -100, c.z);
             _s.set(0.001, 0.001, 0.001);

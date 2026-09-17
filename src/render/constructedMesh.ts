@@ -6,46 +6,34 @@ import type { GameState } from '../sim/state';
 import { terrainHeight } from '../worldgen/coords';
 import type { WorldData } from '../worldgen/types';
 import { MAX_HEIGHT, SEA_LEVEL } from '../worldgen/types';
-import { archGeo, type DecorArch } from './buildingsMesh';
-
-/** Visual stand-ins from the ANNALS arch kit until buildings get bespoke models. */
-export const BUILDING_ARCH: Record<BuildingId, DecorArch> = {
-  townCenter: 'keep',
-  palisade: 'wall',
-  stoneWall: 'wall',
-  house: 'house',
-  farm: 'mill',
-  lumberCamp: 'longhouse',
-  quarry: 'smithy',
-  market: 'shop',
-  storehouse: 'warehouse',
-  temple: 'temple',
-  granary: 'granary',
-  university: 'tower',
-  guildhall: 'tavern',
-  keep: 'keep',
-  barracks: 'warehouse',
-  archeryRange: 'longhouse',
-  stable: 'longhouse',
-  wonder: 'keep', // stands taller via per-instance scale below
-};
-
-/** The Wonder dwarfs everything else; town centers stand a head above; walls run long. */
-export const ARCH_SCALE: Partial<Record<BuildingId, number>> = {
-  wonder: 3.2,
-  townCenter: 1.15,
-  stoneWall: 1.4,
-};
+import {
+  BUILDING_KINDS,
+  type BuildingCulture,
+  type BuildingKind,
+  buildingGeo,
+  WALL_SEG_LEN,
+} from './buildingKit';
 
 /** Wall buildings render as a ring around the town, not at their placed spot (M10). */
 const WALL_IDS = new Set<BuildingId>(['palisade', 'stoneWall']);
 
-const GOLDEN_ANGLE = 2.399963;
+/** The 18 game buildings in kit order — ring assignment stays stable frame to frame. */
+const RING_ORDER = BUILDING_KINDS.filter(
+  (k) => k !== 'wallSegment' && k !== 'wallTower' && k !== 'tent',
+) as readonly BuildingId[];
+const KIND_SET = new Set<string>(BUILDING_KINDS);
+
+/** The owner realm's culture, for culture-styled geometry (M18b). */
+export function cultureOf(state: GameState, realm: number): BuildingCulture {
+  const c = state.realms[realm]?.culture;
+  return c === 'norvik' || c === 'ashari' ? c : 'valen';
+}
 
 /**
  * Renders player-constructed buildings in a ring outside each settlement's
  * organic core. Placement is a pure function of (settlement, index) so it is
  * identical on every client and every reload — no rng, no sim coupling.
+ * Since M18b every building draws from the culture-styled kit at world scale.
  */
 export function createConstructed(
   scene: THREE.Scene,
@@ -84,14 +72,34 @@ export function createConstructed(
       group = new THREE.Group();
       group.name = 'constructed';
 
-      const byArch = new Map<
-        DecorArch,
-        { x: number; z: number; y: number; rot: number; tint: THREE.Color; scale?: number }[]
+      // instancing keyed by kind AND culture — three peoples, three skylines
+      const byKey = new Map<
+        string,
+        {
+          kind: BuildingKind;
+          culture: BuildingCulture;
+          list: { x: number; z: number; y: number; rot: number; tint: THREE.Color }[];
+        }
       >();
+      const push = (
+        kind: BuildingKind,
+        culture: BuildingCulture,
+        p: { x: number; z: number; y: number; rot: number; tint: THREE.Color },
+      ) => {
+        const key = `${kind}:${culture}`;
+        let e = byKey.get(key);
+        if (!e) {
+          e = { kind, culture, list: [] };
+          byKey.set(key, e);
+        }
+        e.list.push(p);
+      };
+
       for (const s of state.settlements) {
         const site = world.settlements[s.id];
         // rival grounds render only once explored (player structures always show)
         if (s.ownerRealm !== 0 && fog && !fog.exploredAt(site.x, site.z)) continue;
+        const culture = cultureOf(state, s.ownerRealm);
         const tint = cultureTint(state.realms[s.ownerRealm]?.culture ?? null);
         // player-placed buildings stand at their chosen ground...
         const placedCounts: Partial<Record<BuildingId, number>> = {};
@@ -99,31 +107,22 @@ export function createConstructed(
           placedCounts[pb.building] = (placedCounts[pb.building] ?? 0) + 1;
           // walls render as a ring around the town; the placed spot gets a
           // watchtower marker instead — "the gate stands where I put it"
-          const arch = WALL_IDS.has(pb.building) ? 'tower' : BUILDING_ARCH[pb.building];
-          if (!arch) continue;
+          const kind = WALL_IDS.has(pb.building) ? 'wallTower' : (pb.building as BuildingKind);
+          if (!KIND_SET.has(kind)) continue;
           const y = terrainHeight(world.heightmap, pb.x, pb.z);
-          const list = byArch.get(arch) ?? [];
-          list.push({
-            x: pb.x,
-            z: pb.z,
-            y,
-            rot: (pb.x + pb.z) % Math.PI,
-            tint,
-            scale: WALL_IDS.has(pb.building) ? 0.8 : ARCH_SCALE[pb.building],
-          });
-          byArch.set(arch, list);
+          push(kind, culture, { x: pb.x, z: pb.z, y, rot: (pb.x + pb.z) % Math.PI, tint });
         }
         // ...the rest (AI and legacy construction) keep the generated ring
         let k = 0;
         // stable id order keeps existing buildings in place as new ones appear
-        for (const id of Object.keys(BUILDING_ARCH) as BuildingId[]) {
+        for (const id of RING_ORDER) {
           if (WALL_IDS.has(id)) continue; // walls live on the ring below
           const n = (s.buildings[id] ?? 0) - (placedCounts[id] ?? 0);
           for (let i = 0; i < n; i++) {
-            const arch = BUILDING_ARCH[id];
-            const list = byArch.get(arch) ?? [];
-            list.push({ ...ringSpot(world, s.id, k++), tint });
-            byArch.set(arch, list);
+            const p = ringSpot(world, s.id, k++);
+            // entrances (+Z) turn toward the town they serve
+            const rot = Math.atan2(site.x - p.x, site.z - p.z);
+            push(id as BuildingKind, culture, { ...p, rot, tint });
           }
         }
 
@@ -133,38 +132,36 @@ export function createConstructed(
           const wallTint = tint
             .clone()
             .lerp(new THREE.Color(stone ? 0x9a9384 : 0x8a6a3f), stone ? 0.4 : 0.55);
-          const segs = Math.floor(site.radius / 9);
-          const list = byArch.get('wall') ?? [];
+          const ringR = site.radius * 0.92;
+          // segment count from the kit's tiling length — the ring closes seamlessly
+          const segs = Math.max(8, Math.round((6.283 * ringR) / WALL_SEG_LEN));
           for (let w = 0; w < segs; w++) {
             const a = (w / segs) * 6.283;
-            const wx = site.x + Math.cos(a) * (site.radius * 0.92);
-            const wz = site.z + Math.sin(a) * (site.radius * 0.92);
+            const wx = site.x + Math.cos(a) * ringR;
+            const wz = site.z + Math.sin(a) * ringR;
             const wy = terrainHeight(world.heightmap, wx, wz);
             if (wy < SEA_LEVEL * MAX_HEIGHT + 1) continue; // the sea is wall enough
-            list.push({ x: wx, z: wz, y: wy, rot: a + 1.5708, tint: wallTint, scale: stone ? 1.4 : 0.85 });
+            push('wallSegment', culture, { x: wx, z: wz, y: wy, rot: a + 1.5708, tint: wallTint });
           }
-          byArch.set('wall', list);
         }
       }
 
       const _m = new THREE.Matrix4();
       const _q = new THREE.Quaternion();
       const _v = new THREE.Vector3();
-      const _s = new THREE.Vector3();
+      const _s = new THREE.Vector3(1, 1, 1);
       const _e = new THREE.Euler();
-      for (const [arch, list] of byArch) {
+      for (const [key, e] of byKey) {
         const im = new THREE.InstancedMesh(
-          archGeo(arch),
+          buildingGeo(e.kind, e.culture),
           new THREE.MeshLambertMaterial({ vertexColors: true }),
-          list.length,
+          e.list.length,
         );
-        im.name = `constructed-${arch}`;
-        list.forEach((p, i) => {
+        im.name = `constructed-${key}`;
+        e.list.forEach((p, i) => {
           _v.set(p.x, p.y, p.z);
           _e.set(0, p.rot, 0);
           _q.setFromEuler(_e);
-          const sc = 1.6 * (p.scale ?? 1);
-          _s.set(sc, sc, sc);
           _m.compose(_v, _q, _s);
           im.setMatrixAt(i, _m);
           im.setColorAt(i, p.tint);
