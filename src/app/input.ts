@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import { BUILDINGS } from '../content/buildings';
 import type { BuildingId } from '../content/schema';
 import type { ArmiesHandle } from '../render/armiesMesh';
-import { archGeo } from '../render/buildingsMesh';
-import { BUILDING_ARCH } from '../render/constructedMesh';
+import { type BuildingKind, buildingGeo } from '../render/buildingKit';
+import { cultureOf } from '../render/constructedMesh';
 import type { SceneHandle } from '../render/scene';
 import { totalUnits } from '../sim/combat';
 import type { Command } from '../sim/commands';
@@ -113,13 +113,10 @@ export function createInput(opts: {
   const setPlacement = (building: BuildingId | null): void => {
     clearGhost();
     if (!building) return;
-    const arch = BUILDING_ARCH[building];
-    if (!arch) return;
     placing = building;
-    ghost = new THREE.Mesh(archGeo(arch), ghostMaterial);
+    // the ghost is the real kit model, in the player's own style, at world scale
+    ghost = new THREE.Mesh(buildingGeo(building as BuildingKind, cultureOf(state, 0)), ghostMaterial);
     ghost.name = 'placement-ghost';
-    const sc = 1.6 * (building === 'wonder' ? 3.2 : 1);
-    ghost.scale.set(sc, sc, sc);
     ghost.raycast = () => {};
     ghost.visible = false;
     scene.scene.add(ghost);
