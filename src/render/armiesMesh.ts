@@ -4,6 +4,7 @@ import type { GameState } from '../sim/state';
 import { terrainHeight } from '../worldgen/coords';
 import type { WorldData } from '../worldgen/types';
 import { archGeo } from './buildingsMesh';
+import { UNIT_KINDS, type UnitKind, unitGeo, unitHeight } from './unitKit';
 
 const PHASE_COLOR: Record<string, number> = {
   idle: 0xc9a227,
@@ -94,8 +95,6 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
 
   const coneGeo = new THREE.ConeGeometry(8, 26, 6);
   coneGeo.translate(0, 13, 0);
-  const soldierGeo = new THREE.BoxGeometry(3.2, 9, 3.2);
-  soldierGeo.translate(0, 4.5, 0);
   const ringGeo = new THREE.RingGeometry(16, 20, 24);
   ringGeo.rotateX(-Math.PI / 2);
 
@@ -103,16 +102,47 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
   barGeo.translate(0.5, 0, 0); // left-anchored: the fill drains rightward
 
   let cones: THREE.InstancedMesh | null = null;
-  let soldiers: THREE.InstancedMesh | null = null;
   let rings: THREE.InstancedMesh | null = null;
   let barsBack: THREE.InstancedMesh | null = null;
   let barsFront: THREE.InstancedMesh | null = null;
   let coneCap = 0;
-  let soldierCap = 0;
+  let barCap = 0;
   let ringCap = 0;
   let pickIds: number[] = [];
 
-  const ensureCapacity = (needCones: number, needSoldiers: number, needRings: number) => {
+  // one instanced pool per unit type (M18a) — the kit's models replace the placeholder boxes
+  interface SoldierPool {
+    mesh: THREE.InstancedMesh;
+    cap: number;
+    idx: number;
+  }
+  const pools = new Map<UnitKind, SoldierPool>();
+  const KIND_SET = new Set<string>(UNIT_KINDS);
+  const soldierKind = (t: string): UnitKind => (KIND_SET.has(t) ? (t as UnitKind) : 'militia');
+  const ensurePool = (kind: UnitKind, need: number): SoldierPool => {
+    let p = pools.get(kind);
+    if (p && need <= p.cap) return p;
+    if (p) scene.remove(p.mesh);
+    const cap = Math.max(16, need * 2);
+    const mesh = new THREE.InstancedMesh(
+      unitGeo(kind),
+      new THREE.MeshLambertMaterial({ vertexColors: true, color: 0xffffff }),
+      cap,
+    );
+    mesh.name = `army-soldiers-${kind}`;
+    mesh.frustumCulled = false;
+    mesh.raycast = () => {}; // picking goes through the banner cones only
+    scene.add(mesh);
+    p = { mesh, cap, idx: 0 };
+    pools.set(kind, p);
+    return p;
+  };
+  /** Last movement heading per soldier — a standing unit keeps facing where it walked. */
+  const headings = new Map<number, number>();
+  const _e = new THREE.Euler();
+  const kindCount = new Map<UnitKind, number>();
+
+  const ensureCapacity = (needCones: number, needBars: number, needRings: number) => {
     if (!cones || needCones > coneCap) {
       if (cones) scene.remove(cones);
       coneCap = Math.max(8, needCones * 2);
@@ -121,29 +151,19 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
       cones.frustumCulled = false; // instance bounds are not where the geometry is
       scene.add(cones);
     }
-    if (!soldiers || needSoldiers > soldierCap) {
-      if (soldiers) scene.remove(soldiers);
+    if (!barsBack || needBars > barCap) {
       if (barsBack) scene.remove(barsBack);
       if (barsFront) scene.remove(barsFront);
-      soldierCap = Math.max(64, needSoldiers * 2);
-      soldiers = new THREE.InstancedMesh(
-        soldierGeo,
-        new THREE.MeshLambertMaterial({ color: 0xffffff }),
-        soldierCap,
-      );
-      soldiers.name = 'army-soldiers';
-      soldiers.frustumCulled = false;
-      soldiers.raycast = () => {}; // picking goes through the banner cones only
-      scene.add(soldiers);
+      barCap = Math.max(64, needBars * 2);
       barsBack = new THREE.InstancedMesh(
         barGeo,
         new THREE.MeshBasicMaterial({ color: 0x14100c, side: THREE.DoubleSide }),
-        soldierCap,
+        barCap,
       );
       barsFront = new THREE.InstancedMesh(
         barGeo,
         new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide }),
-        soldierCap,
+        barCap,
       );
       barsBack.name = 'hp-bars-back';
       barsFront.name = 'hp-bars-front';
@@ -206,7 +226,6 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
       pickIds = [];
       const ownerOf = new Map(state.armies.map((a) => [a.id, a.ownerRealm]));
 
-      let sIdx = 0;
       let rIdx = 0;
       state.armies.forEach((a, k) => {
         const x = a.prevX + (a.x - a.prevX) * alpha;
@@ -246,7 +265,8 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
         }
       });
 
-      // every soldier at its TRUE position (M8a), interpolated like the banners
+      // every soldier at its TRUE position (M8a), interpolated like the banners;
+      // two passes (M18a): size each type's pool first, then fill
       let bIdx = 0;
       const cam = bars?.camera;
       if (cam) {
@@ -254,25 +274,48 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
         _right.set(1, 0, 0).applyQuaternion(cam.quaternion);
         _fwd.set(0, 0, -1).applyQuaternion(cam.quaternion);
       }
+      kindCount.clear();
       for (const u of state.units) {
-        if (!soldiers || sIdx >= soldierCap) break;
+        const k = soldierKind(u.type);
+        kindCount.set(k, (kindCount.get(k) ?? 0) + 1);
+      }
+      for (const [k, cnt] of kindCount) ensurePool(k, cnt);
+      for (const p of pools.values()) p.idx = 0;
+      if (headings.size > state.units.length * 4 + 64) headings.clear(); // stale ids from long-dead soldiers
+      for (const u of state.units) {
         const owner = ownerOf.get(u.group) ?? 0;
         const ux = u.prevX + (u.x - u.prevX) * alpha;
         const uz = u.prevZ + (u.z - u.prevZ) * alpha;
         if (fog && owner !== 0 && !fog.visibleAt(ux, uz)) continue; // unseen soldiers stay unseen
+        const kind = soldierKind(u.type);
+        const pool = pools.get(kind);
+        if (!pool || pool.idx >= pool.cap) continue;
         const uy = terrainHeight(world.heightmap, ux, uz);
         const isDragonUnit = u.type === 'dragon';
         _v.set(ux, uy, uz);
         const usc = isDragonUnit ? 4 : 1;
         _s.set(usc, usc, usc);
-        _q.identity();
+        const dx = u.x - u.prevX;
+        const dz = u.z - u.prevZ;
+        let heading = headings.get(u.id) ?? 0;
+        if (dx * dx + dz * dz > 0.25) {
+          // face the walk; below the threshold combat micro-steps would just jitter
+          heading = Math.atan2(dx, dz);
+          headings.set(u.id, heading);
+        }
+        _q.setFromEuler(_e.set(0, heading, 0));
         _m.compose(_v, _q, _s);
-        soldiers.setMatrixAt(sIdx, _m);
-        soldiers.setColorAt(
-          sIdx,
-          _c.set(owner === 0 ? SOLDIER_COLOR.player : owner < 0 ? SOLDIER_COLOR.wild : SOLDIER_COLOR.rival),
+        pool.mesh.setMatrixAt(pool.idx, _m);
+        // the dragon wears its true colors — an owner wash would blacken it
+        pool.mesh.setColorAt(
+          pool.idx,
+          isDragonUnit
+            ? _c.set(0xffffff)
+            : _c.set(
+                owner === 0 ? SOLDIER_COLOR.player : owner < 0 ? SOLDIER_COLOR.wild : SOLDIER_COLOR.rival,
+              ),
         );
-        sIdx++;
+        pool.idx++;
         if (selectedUnits?.has(u.id) && rings && rIdx < ringCap) {
           _v.set(ux, uy + 1, uz);
           _s.set(0.28, 1, 0.28);
@@ -283,10 +326,11 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
         }
 
         // hp bar — only over the wounded, only near enough to read (M10)
-        if (bars && cam && barsBack && barsFront && bIdx < soldierCap) {
+        if (bars && cam && barsBack && barsFront && bIdx < barCap) {
           const max = bars.maxHp(u.id);
           if (max !== undefined && u.hp < max && u.hp > 0) {
-            _v.set(ux, uy + 11.5 * usc, uz);
+            // capped so a raised pike doesn't carry the bar with it
+            _v.set(ux, uy + (Math.min(unitHeight(kind), 10.5) + 2.5) * usc, uz);
             if (cam.position.distanceToSquared(_v) < BAR_MAX_DIST_SQ) {
               const frac = Math.max(0, Math.min(1, u.hp / max));
               // back plate: slightly larger, nudged away from the camera
@@ -314,10 +358,10 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
         cones.instanceMatrix.needsUpdate = true;
         if (cones.instanceColor) cones.instanceColor.needsUpdate = true;
       }
-      if (soldiers) {
-        soldiers.count = sIdx;
-        soldiers.instanceMatrix.needsUpdate = true;
-        if (soldiers.instanceColor) soldiers.instanceColor.needsUpdate = true;
+      for (const p of pools.values()) {
+        p.mesh.count = p.idx;
+        p.mesh.instanceMatrix.needsUpdate = true;
+        if (p.mesh.instanceColor) p.mesh.instanceColor.needsUpdate = true;
       }
       if (rings) {
         rings.count = rIdx;
