@@ -243,7 +243,8 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
           pickIds.push(a.id);
           return;
         }
-        const sc = isDragon ? 3.2 : 0.8 + Math.sqrt(totalUnits(a.units)) * 0.12;
+        // the dragon has a real model now (M18a) — its banner shrinks to a marker
+        const sc = isDragon ? 1.3 : 0.8 + Math.sqrt(totalUnits(a.units)) * 0.12;
         _v.set(x, y, z);
         _s.set(sc, sc, sc);
         _q.identity();
