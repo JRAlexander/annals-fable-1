@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { totalUnits } from '../sim/combat';
 import type { GameState } from '../sim/state';
 import { terrainHeight } from '../worldgen/coords';
@@ -36,6 +37,51 @@ export const SOLDIER_COLOR: Record<string, number> = { player: 0xd8c88f, rival: 
 const BAR_MAX_DIST_SQ = 1600 * 1600;
 const BAR_W = 8;
 const BAR_H = 1.1;
+
+/** Banners melt away as the camera closes in — up close, the soldiers ARE the marker. */
+const BANNER_FADE_NEAR = 150;
+const BANNER_FADE_FAR = 320;
+
+function paintFlat(g: THREE.BufferGeometry, col: number): THREE.BufferGeometry {
+  const c = new THREE.Color(col);
+  const n = g.attributes.position.count;
+  const a = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    a[i * 3] = c.r;
+    a[i * 3 + 1] = c.g;
+    a[i * 3 + 2] = c.b;
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(a, 3));
+  return g;
+}
+
+/**
+ * The army standard (M18c): a wooden pole, a gilt finial, and a streaming
+ * banner cloth painted near-white so the phase color (setColorAt multiply)
+ * reads at full strength — it replaces the old solid marker cone.
+ */
+function standardGeo(): THREE.BufferGeometry {
+  const pole = new THREE.BoxGeometry(0.9, 30, 0.9);
+  pole.translate(0, 15, 0);
+  const finial = new THREE.ConeGeometry(1.3, 2.8, 5);
+  finial.translate(0, 31.3, 0);
+  const cloth = new THREE.BoxGeometry(10.5, 7.5, 0.4);
+  cloth.translate(5.8, 24.7, 0);
+  // the cloth's trailing edge dips — a pennant tail, not a billboard
+  const tail = new THREE.BoxGeometry(3.2, 4.2, 0.4);
+  tail.translate(12.4, 23, 0);
+  const g = mergeGeometries(
+    [
+      paintFlat(pole, 0x6b4f35),
+      paintFlat(finial, 0xc9a227),
+      paintFlat(cloth, 0xf0f0f0),
+      paintFlat(tail, 0xe4e4e4),
+    ],
+    false,
+  );
+  g.computeVertexNormals();
+  return g;
+}
 
 export interface ArmyPick {
   mesh: THREE.InstancedMesh;
@@ -93,8 +139,11 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
   scene.add(tents);
   const tentShown: boolean[] = world.camps.map(() => true);
 
+  // the cone survives only as an invisible pick volume — clicking an army
+  // must stay easy even while its banner is faded out at close zoom
   const coneGeo = new THREE.ConeGeometry(8, 26, 6);
   coneGeo.translate(0, 13, 0);
+  const standGeo = standardGeo();
   const ringGeo = new THREE.RingGeometry(16, 20, 24);
   ringGeo.rotateX(-Math.PI / 2);
 
@@ -102,6 +151,7 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
   barGeo.translate(0.5, 0, 0); // left-anchored: the fill drains rightward
 
   let cones: THREE.InstancedMesh | null = null;
+  let banners: THREE.InstancedMesh | null = null;
   let rings: THREE.InstancedMesh | null = null;
   let barsBack: THREE.InstancedMesh | null = null;
   let barsFront: THREE.InstancedMesh | null = null;
@@ -145,11 +195,24 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
   const ensureCapacity = (needCones: number, needBars: number, needRings: number) => {
     if (!cones || needCones > coneCap) {
       if (cones) scene.remove(cones);
+      if (banners) scene.remove(banners);
       coneCap = Math.max(8, needCones * 2);
+      // invisible but still raycastable — the pick volume never fades with the banner;
+      // it keeps the 'army-banners' name so castGround's skip-list still applies
       cones = new THREE.InstancedMesh(coneGeo, new THREE.MeshLambertMaterial({ color: 0xffffff }), coneCap);
       cones.name = 'army-banners';
+      cones.visible = false;
       cones.frustumCulled = false; // instance bounds are not where the geometry is
       scene.add(cones);
+      banners = new THREE.InstancedMesh(
+        standGeo,
+        new THREE.MeshLambertMaterial({ vertexColors: true, color: 0xffffff }),
+        coneCap,
+      );
+      banners.name = 'army-standards';
+      banners.frustumCulled = false;
+      banners.raycast = () => {}; // picking goes through the invisible cones
+      scene.add(banners);
     }
     if (!barsBack || needBars > barCap) {
       if (barsBack) scene.remove(barsBack);
@@ -227,6 +290,7 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
       const ownerOf = new Map(state.armies.map((a) => [a.id, a.ownerRealm]));
 
       let rIdx = 0;
+      const cam = bars?.camera;
       state.armies.forEach((a, k) => {
         const x = a.prevX + (a.x - a.prevX) * alpha;
         const z = a.prevZ + (a.z - a.prevZ) * alpha;
@@ -240,6 +304,7 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
           _q.identity();
           _m.compose(_v, _q, _s);
           cones?.setMatrixAt(k, _m);
+          banners?.setMatrixAt(k, _m);
           pickIds.push(a.id);
           return;
         }
@@ -249,10 +314,19 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
         _s.set(sc, sc, sc);
         _q.identity();
         _m.compose(_v, _q, _s);
-        cones?.setMatrixAt(k, _m);
+        cones?.setMatrixAt(k, _m); // the pick volume stays full-size whatever the zoom
+        // the visible standard melts away as the camera closes on this army
+        let bsc = sc;
+        if (cam) {
+          const d = cam.position.distanceTo(_v);
+          bsc = sc * Math.min(1, Math.max(0, (d - BANNER_FADE_NEAR) / (BANNER_FADE_FAR - BANNER_FADE_NEAR)));
+        }
+        _s.set(bsc, bsc, bsc);
+        _m.compose(_v, _q, _s);
+        banners?.setMatrixAt(k, _m);
         const palette =
           a.ownerRealm === 0 ? PHASE_COLOR : a.ownerRealm < 0 ? WILD_PHASE_COLOR : ENEMY_PHASE_COLOR;
-        cones?.setColorAt(k, _c.set(isDragon ? DRAGON_COLOR : (palette[a.phase] ?? 0xc9a227)));
+        banners?.setColorAt(k, _c.set(isDragon ? DRAGON_COLOR : (palette[a.phase] ?? 0xc9a227)));
         pickIds.push(a.id);
 
         if (selected?.has(a.id) && rings && rIdx < ringCap) {
@@ -269,7 +343,6 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
       // every soldier at its TRUE position (M8a), interpolated like the banners;
       // two passes (M18a): size each type's pool first, then fill
       let bIdx = 0;
-      const cam = bars?.camera;
       if (cam) {
         // camera-facing frame computed once — every bar shares the billboard
         _right.set(1, 0, 0).applyQuaternion(cam.quaternion);
@@ -357,7 +430,11 @@ export function createArmies(scene: THREE.Scene, world: WorldData): ArmiesHandle
       if (cones) {
         cones.count = n;
         cones.instanceMatrix.needsUpdate = true;
-        if (cones.instanceColor) cones.instanceColor.needsUpdate = true;
+      }
+      if (banners) {
+        banners.count = n;
+        banners.instanceMatrix.needsUpdate = true;
+        if (banners.instanceColor) banners.instanceColor.needsUpdate = true;
       }
       for (const p of pools.values()) {
         p.mesh.count = p.idx;
